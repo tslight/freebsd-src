@@ -205,6 +205,7 @@ struct ukbd_softc {
 	uint16_t sc_inputs;
 	uint16_t sc_inputhead;
 	uint16_t sc_inputtail;
+	uint16_t sc_vendor_id;
 
 	uint8_t	sc_leds;		/* store for async led requests */
 	uint8_t	sc_iface_index;
@@ -1092,32 +1093,35 @@ ukbd_parse_hid(struct ukbd_softc *sc, const uint8_t *ptr, uint32_t len)
 	sc->sc_kbd_size = hid_report_size_max(ptr, len,
 	    hid_input, &sc->sc_kbd_id);
 
-	/* investigate if this is an Apple Keyboard */
-	if (hid_locate(ptr, len,
-	    HID_USAGE2(HUP_CONSUMER, HUG_APPLE_EJECT),
-	    hid_input, 0, &sc->sc_loc_apple_eject, &flags,
-	    &sc->sc_id_apple_eject)) {
-		if (flags & HIO_VARIABLE)
-			sc->sc_flags |= UKBD_FLAG_APPLE_EJECT;
-		DPRINTFN(1, "Found Apple eject-key\n");
-	}
-	/* check the same vendor pages that linux does to find the one apple
-	 * uses for the function key. */
-	static const uint16_t apple_pages[] = {
-		HUP_APPLE,     /* HID_UP_CUSTOM in linux */
-		HUP_MICROSOFT, /* HID_UP_MSVENDOR in linux */
-		HUP_HP,        /* HID_UP_HPVENDOR2 in linux */
-		0xFFFF         /* Original FreeBSD check (Remove?) */
-	};
-	for (int i = 0; i < (int)nitems(apple_pages); i++) {
-		if (hid_locate(ptr, len, HID_USAGE2(apple_pages[i], 0x0003),
-			hid_input, 0, &sc->sc_loc_apple_fn, &flags,
-			&sc->sc_id_apple_fn)) {
+	/* investigate if this is an Apple Keyboard. */
+	if (sc->sc_vendor_id == USB_VENDOR_APPLE) {
+		if (hid_locate(ptr, len,
+		    HID_USAGE2(HUP_CONSUMER, HUG_APPLE_EJECT),
+		    hid_input, 0, &sc->sc_loc_apple_eject, &flags,
+		    &sc->sc_id_apple_eject)) {
 			if (flags & HIO_VARIABLE)
-				sc->sc_flags |= UKBD_FLAG_APPLE_FN;
-			DPRINTFN(1, "Found Apple FN-key on page 0x%04x\n",
-			    apple_pages[i]);
-			break;
+				sc->sc_flags |= UKBD_FLAG_APPLE_EJECT;
+			DPRINTFN(1, "Found Apple eject-key\n");
+		}
+		/* check the same vendor pages that linux does to find the one
+		 * apple uses for the function key. */
+		static const uint16_t apple_pages[] = {
+			HUP_APPLE,     /* HID_UP_CUSTOM in linux */
+			HUP_MICROSOFT, /* HID_UP_MSVENDOR in linux */
+			HUP_HP,        /* HID_UP_HPVENDOR2 in linux */
+			0xFFFF         /* Original FreeBSD check (Remove?) */
+		};
+		for (int i = 0; i < (int)nitems(apple_pages); i++) {
+			if (hid_locate(ptr, len,
+			    HID_USAGE2(apple_pages[i], 0x0003),
+			    hid_input, 0, &sc->sc_loc_apple_fn, &flags,
+			    &sc->sc_id_apple_fn)) {
+				if (flags & HIO_VARIABLE)
+					sc->sc_flags |= UKBD_FLAG_APPLE_FN;
+				DPRINTFN(1, "Found Apple FN-key on page 0x%04x\n",
+				    apple_pages[i]);
+				break;
+			}
 		}
 	}
 
@@ -1206,6 +1210,7 @@ ukbd_attach(device_t dev)
 
 	sc->sc_udev = uaa->device;
 	sc->sc_iface = uaa->iface;
+	sc->sc_vendor_id = uaa->info.idVendor;
 	sc->sc_iface_index = uaa->info.bIfaceIndex;
 	sc->sc_iface_no = uaa->info.bIfaceNum;
 	sc->sc_mode = K_XLATE;
