@@ -34,7 +34,6 @@
 /bin/sh		@jillest
 /contrib/atf		@ngie-eign
 /contrib/blocklist	@jlduran
-/contrib/capsicum-test	@ngie-eign @emaste
 /contrib/googletest	@ngie-eign
 /contrib/libcxxrt	@DimitryAndric @emaste
 /contrib/llvm-project	@DimitryAndric
@@ -48,10 +47,15 @@
 /contrib/one-true-awk/		@bsdimp
 /contrib/openpam/lib/libpam/		@dag-erling
 /contrib/pjdfstest	@ngie-eign @asomers
+/contrib/wpa		@cschuber
+/crypto/heimdal		@cschuber
+/crypto/krb5		@cschuber
 /crypto/openssh	@dag-erling @emaste
 /crypto/openssl/	@juikim
 /etc/mail	@gshapiro
 /etc/sendmail	@gshapiro
+/kerberos5	@cschuber
+/krb5		@cschuber
 /lib/libblocklist	@jlduran
 /lib/libc/string/	@fuz
 /lib/libc/*/string/	@fuz
@@ -113,6 +117,7 @@
 /sys/x86/pci	@bsdimp @bsdjhb
 /tests	@ngie-eign
 /tests/sys/aio/	@asomers
+/tests/sys/capsicum-test @ngie-eign @emaste
 /tests/sys/fs/fusefs/ @asomers
 /tests/sys/kqueue/	@jmgurney
 /tests/sys/opencrypto/	@jmgurney
@@ -131,3 +136,4 @@
 /usr.sbin/blocklistd	@jlduran
 /usr.sbin/lpr	@gbergling
 /usr.sbin/makefs	@emaste
+/usr.sbin/wpa		@cschuber

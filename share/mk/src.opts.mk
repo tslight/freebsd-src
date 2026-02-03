@@ -383,6 +383,10 @@ BROKEN_OPTIONS+= OFED
 BROKEN_OPTIONS+= TESTS
 .endif
 
+.if ${__T} != "amd64"
+BROKEN_OPTIONS+=BHYVE_SNAPSHOT
+.endif
+
 .-include <site.src.opts.mk>
 
 .include <bsd.mkopt.mk>
@@ -498,11 +502,6 @@ MK_CLANG_EXTRAS:= no
 MK_CLANG_FORMAT:= no
 MK_CLANG_FULL:= no
 MK_LLVM_COV:= no
-.endif
-
-# CUSE is needed only by virtual_oss, but virtual_oss is part of MK_SOUND.
-.if ${MK_CUSE} == "no"
-MK_SOUND:= no
 .endif
 
 .if ${MK_ASAN} == "yes"
