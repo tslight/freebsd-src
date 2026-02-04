@@ -642,12 +642,12 @@ hkbd_apple_fn_media(uint32_t keycode)
 	case 0x3d: return 0xc3; /* F4 -> DASHBOARD (LAUNCHPAD) */
 	case 0x3e: return 0xc4; /* F5 -> KBD BACKLIGHT DOWN */
 	case 0x3f: return 0xc5; /* F6 -> KBD BACKLIGHT UP */
-	case 0x40: return 0xEA; /* F7 -> MEDIA PREV */
-	case 0x41: return 0xE8; /* F8 -> PLAY/PAUSE */
-	case 0x42: return 0xEB; /* F9 -> MEDIA NEXT */
-	case 0x43: return 0xEF; /* F10 -> MUTE */
-	case 0x44: return 0xEE; /* F11 -> VOLUME DOWN */
-	case 0x45: return 0xED; /* F12 -> VOLUME UP */
+	case 0x40: return 0xea; /* F7 -> MEDIA PREV */
+	case 0x41: return 0xe8; /* F8 -> PLAY/PAUSE */
+	case 0x42: return 0xeb; /* F9 -> MEDIA NEXT */
+	case 0x43: return 0xef; /* F10 -> MUTE */
+	case 0x44: return 0xee; /* F11 -> VOLUME DOWN */
+	case 0x45: return 0xed; /* F12 -> VOLUME UP */
 	default: return keycode;
 	}
 }
@@ -862,7 +862,7 @@ hkbd_parse_hid(struct hkbd_softc *sc, const uint8_t *ptr, uint32_t len,
 			}
 		}
 	}
-	
+
 	/* figure out event buffer */
 	if (hidbus_locate(ptr, len,
 	    HID_USAGE2(HUP_KEYBOARD, 0x00),
