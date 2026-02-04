@@ -767,9 +767,8 @@ ukbd_swap_modifiers(uint32_t keycode)
 		case 0xe4: return 0xe7; /* RCTRL -> RMETA */
 		default: return keycode;
 		}
-	} else {
-		return keycode;
 	}
+	return keycode;
 }
 
 static uint32_t
@@ -787,9 +786,8 @@ ukbd_swap_caps(uint32_t keycode)
 		case 0x29: return 0x39; /* ESC -> CAPS */
 		default: return keycode;
 		}
-	} else {
-		return keycode;
 	}
+	return keycode;
 }
 
 static uint32_t
@@ -907,6 +905,8 @@ ukbd_intr_callback(struct usb_xfer *xfer, usb_error_t error)
 						sc->sc_ndata = sc->sc_odata;
 						goto tr_setup; /* ignore */
 					}
+					key = ukbd_swap_caps(key);
+					key = ukbd_swap_modifiers(key);
 					if (modifiers & MOD_FN)
 						key = ukbd_apple_fn(key);
 					if (apply_apple_fn_media)
@@ -920,8 +920,8 @@ ukbd_intr_callback(struct usb_xfer *xfer, usb_error_t error)
 				}
 			} else if (hid_get_data(sc->sc_buffer, len, &sc->sc_loc_key[i])) {
 				uint32_t key = i;
-				key = ukbd_swap_modifiers(key);
 				key = ukbd_swap_caps(key);
+				key = ukbd_swap_modifiers(key);
 				if (modifiers & MOD_FN)
 					key = ukbd_apple_fn(key);
 				if (apply_apple_fn_media)

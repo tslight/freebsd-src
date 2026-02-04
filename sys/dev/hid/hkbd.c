@@ -711,9 +711,8 @@ hkbd_swap_modifiers(uint32_t keycode)
 		case 0xe4: return 0xe7; /* RCTRL -> RMETA */
 		default: return keycode;
 		}
-	} else {
-		return keycode;
 	}
+	return keycode;
 }
 
 static uint32_t
@@ -731,9 +730,8 @@ hkbd_swap_caps(uint32_t keycode)
 		case 0x29: return 0x39; /* ESC -> CAPS */
 		default: return keycode;
 		}
-	} else {
-		return keycode;
 	}
+	return keycode;
 }
 
 static uint32_t
@@ -833,6 +831,8 @@ hkbd_intr_callback(void *context, void *data, hid_size_t len)
 					    bitstr_size(HKBD_NKEYCODE));
 					return;	/* ignore */
 				}
+				key = hkbd_swap_caps(key);
+				key = hkbd_swap_modifiers(key);
 				if (modifiers & MOD_FN)
 					key = hkbd_apple_fn(key);
 				if (apply_apple_fn_media)
@@ -847,8 +847,8 @@ hkbd_intr_callback(void *context, void *data, hid_size_t len)
 			}
 		} else if (hid_get_data(buf, len, &sc->sc_loc_key[i])) {
 			uint32_t key = i;
-			key = hkbd_swap_modifiers(key);
 			key = hkbd_swap_caps(key);
+			key = hkbd_swap_modifiers(key);
 			if (modifiers & MOD_FN)
 				key = hkbd_apple_fn(key);
 			if (apply_apple_fn_media)
