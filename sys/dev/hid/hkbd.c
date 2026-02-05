@@ -106,6 +106,7 @@ static int hkbd_swap_ctrl_meta = 0;
 static int hkbd_swap_caps_ctrl = 0;
 static int hkbd_swap_caps_esc = 0;
 static int hkbd_swap_caps_esc_apple_jis = 0;
+static int hkbd_swap_grave_102 = 0;
 
 static SYSCTL_NODE(_hw_hid, OID_AUTO, hkbd, CTLFLAG_RW, 0, "USB keyboard");
 #ifdef HID_DEBUG
@@ -115,29 +116,25 @@ SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, debug, CTLFLAG_RWTUN,
 SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, no_leds, CTLFLAG_RWTUN,
     &hkbd_no_leds, 0, "Disables setting of keyboard leds");
 SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, apple_fn_mode, CTLFLAG_RWTUN,
-    &hkbd_apple_fn_mode, 0, "0 = Fn + F1..12 -> media, 1 = F1..F12 -> media");
-/* jis enhancements/fixes for non-japanese users */
+    &hkbd_apple_fn_mode, 0, "Access media keys without holding function");
 SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, jis_deadkeys, CTLFLAG_RWTUN,
-    &hkbd_jis_deadkeys, 0, "revive jis layout deadkeys for non-japanese users");
-/* modifier key changes */
+    &hkbd_jis_deadkeys, 0, "Revive JIS deadkeys for non-japanese users");
 SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, space_cadet, CTLFLAG_RWTUN,
-    &hkbd_space_cadet, 0,
-    "space cadet modifier layout (win>alt>ctrl>spc<ctrl<alt<win) when set to 1");
+    &hkbd_space_cadet, 0, "Space Cadet modifier layout");
 SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, swap_alt_ctrl, CTLFLAG_RWTUN,
-    &hkbd_swap_alt_ctrl, 0, "swap alt (option) and control keys when set to 1");
+    &hkbd_swap_alt_ctrl, 0, "Swap alt & control keys");
 SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, swap_alt_meta, CTLFLAG_RWTUN,
-    &hkbd_swap_alt_meta, 0,
-    "swap alt (option) and meta (windows/command/super) keys when set to 1");
+    &hkbd_swap_alt_meta, 0, "Swap alt & meta keys");
 SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, swap_ctrl_meta, CTLFLAG_RWTUN,
-    &hkbd_swap_ctrl_meta, 0,
-    "swap control and meta (windows/command/super) keys when set to 1");
-/* caps lock changes */
+    &hkbd_swap_ctrl_meta, 0, "Swap control & meta keys");
 SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, swap_caps_ctrl, CTLFLAG_RWTUN,
-    &hkbd_swap_caps_ctrl, 0, "swap caps_lock and left control when set to 1");
+    &hkbd_swap_caps_ctrl, 0, "Swap caps_lock & left control");
 SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, swap_caps_esc, CTLFLAG_RWTUN,
-    &hkbd_swap_caps_esc, 0, "swap caps_lock and escape when set to 1");
+    &hkbd_swap_caps_esc, 0, "Swap caps_lock & escape");
 SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, swap_caps_esc_apple_jis, CTLFLAG_RWTUN,
-    &hkbd_swap_caps_esc_apple_jis, 0, "swap caps_lock and escape for apple jis layout");
+    &hkbd_swap_caps_esc_apple_jis, 0, "Swap caps & esc for Apple jis layout");
+SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, swap_grave_102, CTLFLAG_RWTUN,
+    &hkbd_swap_grave_102, 0, "Swap grave and 102nd key");
 
 #define	INPUT_EPOCH	global_epoch_preempt
 
@@ -210,7 +207,6 @@ struct hkbd_softc {
 #define	HKBD_FLAG_HID_MASK	0x003fffc0
 #define	HKBD_FLAG_APPLE_EJECT	0x00000040
 #define	HKBD_FLAG_APPLE_FN	0x00000080
-#define	HKBD_FLAG_APPLE_SWAP	0x00000100
 #define	HKBD_FLAG_NUMLOCK	0x00080000
 #define	HKBD_FLAG_CAPSLOCK	0x00100000
 #define	HKBD_FLAG_SCROLLLOCK 	0x00200000
@@ -683,93 +679,83 @@ hkbd_apple_fn_media(uint32_t keycode)
 }
 
 static uint32_t
-hkbd_apple_swap(uint32_t keycode)
+hkbd_sysctl(uint32_t keycode)
 {
-	switch (keycode) {
-	case 0x35: return 0x64;
-	case 0x64: return 0x35;
-	default: return keycode;
-	}
-}
-
-static uint32_t
-hkbd_swap_caps(uint32_t keycode)
-{
-	if (hkbd_swap_caps_ctrl) {
-		switch (keycode) {
-		case 0x39: return 0xe0; /* CAPS -> LCTRL */
-		case 0xe0: return 0x39; /* LCTRL -> CAPS */
-		default: return keycode;
-		}
-	} else if (hkbd_swap_caps_esc) {
-		switch (keycode) {
-		case 0x39: return 0x29; /* CAPS -> ESC */
-		case 0x29: return 0x39; /* ESC -> CAPS */
-		default: return keycode;
-		}
-	} else if (hkbd_swap_caps_esc_apple_jis) {
-		switch (keycode) {
-		case 0x39: return 0xe0; /* CAPS -> LCTRL */
-		case 0xe0: return 0x29; /* LCTRL -> ESC */
-		case 0x29: return 0x39; /* ESC - > CAPS */
-		default: return keycode;
-		}
-	}
-	return keycode;
-}
-
-static uint32_t
-hkbd_swap_jis(uint32_t keycode)
-{
-	if (hkbd_jis_deadkeys) {
-		switch (keycode) {
-		case 0x90: return 0xe0; /* HANGEUL -> LCTRL */
-		case 0x91: return 0xe4; /* HANJA -> RCTRL */
-		case 0x87: return 0x35; /* RO -> BACKTICK */
-		case 0x89: return 0x30; /* YEN -> BACKSPACE */
-		default: return keycode;
-		}
-	}
-	return keycode;
-}
-
-static uint32_t
-hkbd_swap_modifiers(uint32_t keycode)
-{
-	if (hkbd_space_cadet) {
-		switch (keycode) {
-		case 0xe0: return 0xe3; /* LCTRL -> LMETA */
-		case 0xe2: return 0xe0; /* LALT -> LCTRL */
-		case 0xe3: return 0xe2; /* LMETA -> LALT */
-		case 0xe4: return 0xe7; /* RCTRL -> RMETA */
-		case 0xe6: return 0xe4; /* RALT -> RCTRL */
-		case 0xe7: return 0xe6; /* RMETA -> RALT */
-		}
-	} else if (hkbd_swap_alt_ctrl) {
-		switch (keycode) {
-		case 0xe2: return 0xe0; /* LALT -> LCTRL */
-		case 0xe6: return 0xe4; /* RALT -> RCTRL */
-		case 0xe0: return 0xe2; /* LCTRL -> LALT */
-		case 0xe4: return 0xe6; /* RCTRL -> RALT */
-		}
-	} else if (hkbd_swap_alt_meta) {
-		switch (keycode) {
-		case 0xe3: return 0xe2; /* LMETA -> LALT */
-		case 0xe7: return 0xe6; /* RMETA -> RALT */
-		case 0xe2: return 0xe3; /* LALT -> LMETA */
-		case 0xe6: return 0xe7; /* RALT -> RMETA */
-		default: return keycode;
-		}
-	} else if (hkbd_swap_ctrl_meta) {
-		switch (keycode) {
-		case 0xe3: return 0xe0; /* LMETA -> LCTRL */
-		case 0xe7: return 0xe4; /* RMETA -> RCTRL */
-		case 0xe0: return 0xe3; /* LCTRL -> LMETA */
-		case 0xe4: return 0xe7; /* RCTRL -> RMETA */
-		default: return keycode;
-		}
-	}
-	return keycode;
+  if (hkbd_jis_deadkeys) {
+    switch (keycode) {
+    case 0x90: return 0xe4; /* HANGEUL -> RCTRL */
+    case 0x91: return 0xe0; /* HANJA -> LCTRL */
+    case 0x87: return 0x35; /* RO -> GRAVE */
+    case 0x89: return 0x30; /* YEN -> BACKSPACE */
+    default: return keycode;
+    }
+  }
+  if (hkbd_space_cadet) {
+    switch (keycode) {
+    case 0xe0: return 0xe3; /* LCTRL -> LMETA */
+    case 0xe2: return 0xe0; /* LALT -> LCTRL */
+    case 0xe3: return 0xe2; /* LMETA -> LALT */
+    case 0xe4: return 0xe7; /* RCTRL -> RMETA */
+    case 0xe6: return 0xe4; /* RALT -> RCTRL */
+    case 0xe7: return 0xe6; /* RMETA -> RALT */
+    }
+  }
+  if (hkbd_swap_alt_ctrl) {
+    switch (keycode) {
+    case 0xe2: return 0xe0; /* LALT -> LCTRL */
+    case 0xe6: return 0xe4; /* RALT -> RCTRL */
+    case 0xe0: return 0xe2; /* LCTRL -> LALT */
+    case 0xe4: return 0xe6; /* RCTRL -> RALT */
+    }
+  }
+  if (hkbd_swap_alt_meta) {
+    switch (keycode) {
+    case 0xe3: return 0xe2; /* LMETA -> LALT */
+    case 0xe7: return 0xe6; /* RMETA -> RALT */
+    case 0xe2: return 0xe3; /* LALT -> LMETA */
+    case 0xe6: return 0xe7; /* RALT -> RMETA */
+    default: return keycode;
+    }
+  }
+  if (hkbd_swap_ctrl_meta) {
+    switch (keycode) {
+    case 0xe3: return 0xe0; /* LMETA -> LCTRL */
+    case 0xe7: return 0xe4; /* RMETA -> RCTRL */
+    case 0xe0: return 0xe3; /* LCTRL -> LMETA */
+    case 0xe4: return 0xe7; /* RCTRL -> RMETA */
+    default: return keycode;
+    }
+  }
+  if (hkbd_swap_caps_ctrl) {
+    switch (keycode) {
+    case 0x39: return 0xe0; /* CAPS -> LCTRL */
+    case 0xe0: return 0x39; /* LCTRL -> CAPS */
+    default: return keycode;
+    }
+  }
+  if (hkbd_swap_caps_esc) {
+    switch (keycode) {
+    case 0x39: return 0x29; /* CAPS -> ESC */
+    case 0x29: return 0x39; /* ESC -> CAPS */
+    default: return keycode;
+    }
+  }
+  if (hkbd_swap_caps_esc_apple_jis) {
+    switch (keycode) {
+    case 0xe0: return 0x29; /* LCTRL -> ESC */
+    case 0x39: return 0xe0; /* CAPS -> LCTRL */
+    case 0x29: return 0x39; /* ESC - > CAPS */
+    default: return keycode;
+    }
+  }
+  if (hkbd_swap_grave_102) {
+    switch (keycode) {
+    case 0x35: return 0x64; /* GRAVE -> 102ND */
+    case 0x64: return 0x35; /* 102ND -> GRAVE */
+    default: return keycode;
+    }
+  }
+  return keycode;
 }
 
 static void
@@ -859,15 +845,11 @@ hkbd_intr_callback(void *context, void *data, hid_size_t len)
 					    bitstr_size(HKBD_NKEYCODE));
 					return;	/* ignore */
 				}
-				key = hkbd_swap_caps(key);
-				key = hkbd_swap_jis(key);
-				key = hkbd_swap_modifiers(key);
+				key = hkbd_sysctl(key);
 				if (modifiers & MOD_FN)
 					key = hkbd_apple_fn(key);
 				if (apply_apple_fn_media)
 					key = hkbd_apple_fn_media(key);
-				if (sc->sc_flags & HKBD_FLAG_APPLE_SWAP)
-					key = hkbd_apple_swap(key);
 				if (key == KEY_NONE || key >= HKBD_NKEYCODE)
 					continue;
 				/* set key in bitmap */
@@ -876,15 +858,11 @@ hkbd_intr_callback(void *context, void *data, hid_size_t len)
 			}
 		} else if (hid_get_data(buf, len, &sc->sc_loc_key[i])) {
 			uint32_t key = i;
-			key = hkbd_swap_caps(key);
-			key = hkbd_swap_jis(key);
-			key = hkbd_swap_modifiers(key);
+			key = hkbd_sysctl(key);
 			if (modifiers & MOD_FN)
 				key = hkbd_apple_fn(key);
 			if (apply_apple_fn_media)
 				key = hkbd_apple_fn_media(key);
-			if (sc->sc_flags & HKBD_FLAG_APPLE_SWAP)
-				key = hkbd_apple_swap(key);
 			if (key == KEY_NONE || key == KEY_ERROR || key >= HKBD_NKEYCODE)
 				continue;
 			/* set key in bitmap */
@@ -952,8 +930,7 @@ hkbd_parse_hid(struct hkbd_softc *sc, const uint8_t *ptr, uint32_t len,
 		    hid_input, tlc_index, 0, &sc->sc_loc_apple_eject, &flags,
 		    &sc->sc_id_apple_eject, NULL)) {
 			if (flags & HIO_VARIABLE)
-				sc->sc_flags |= HKBD_FLAG_APPLE_EJECT |
-				    HKBD_FLAG_APPLE_SWAP;
+			  sc->sc_flags |= HKBD_FLAG_APPLE_EJECT;
 			DPRINTFN(1, "Found Apple eject-key\n");
 		}
 		/* check the same vendor pages that linux does to find the one
