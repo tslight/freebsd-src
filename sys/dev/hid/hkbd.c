@@ -98,7 +98,6 @@ static int hkbd_debug = 0;
 #endif
 static int hkbd_no_leds = 0;
 static int hkbd_apple_fn_mode = 0;
-static int hkbd_han_to_ctrl = 0;
 static int hkbd_jis_deadkeys = 0;
 static int hkbd_space_cadet = 0;
 static int hkbd_swap_alt_ctrl = 0;
@@ -137,8 +136,8 @@ SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, swap_caps_ctrl, CTLFLAG_RWTUN,
     &hkbd_swap_caps_ctrl, 0, "swap caps_lock and left control when set to 1");
 SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, swap_caps_esc, CTLFLAG_RWTUN,
     &hkbd_swap_caps_esc, 0, "swap caps_lock and escape when set to 1");
-SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, caps_esc_apple_jis, CTLFLAG_RWTUN,
-    &hkbd_cap_esc_apple_jis, 0, "swap caps_lock and escape for apple jis layout");
+SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, swap_caps_esc_apple_jis, CTLFLAG_RWTUN,
+    &hkbd_swap_caps_esc_apple_jis, 0, "swap caps_lock and escape for apple jis layout");
 
 #define	INPUT_EPOCH	global_epoch_preempt
 
@@ -731,6 +730,7 @@ hkbd_swap_jis(uint32_t keycode)
 		default: return keycode;
 		}
 	}
+	return keycode;
 }
 
 static uint32_t

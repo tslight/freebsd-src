@@ -95,6 +95,7 @@
 
 #ifdef USB_DEBUG
 static int ukbd_debug = 0;
+#endif
 static int ukbd_no_leds = 0;
 static int ukbd_pollrate = 0;
 static int ukbd_apple_fn_mode = 0;
@@ -107,8 +108,10 @@ static int ukbd_swap_caps_esc = 0;
 
 static SYSCTL_NODE(_hw_usb, OID_AUTO, ukbd, CTLFLAG_RW | CTLFLAG_MPSAFE, 0,
     "USB keyboard");
+#ifdef USB_DEBUG
 SYSCTL_INT(_hw_usb_ukbd, OID_AUTO, debug, CTLFLAG_RWTUN,
     &ukbd_debug, 0, "Debug level");
+#endif
 SYSCTL_INT(_hw_usb_ukbd, OID_AUTO, no_leds, CTLFLAG_RWTUN,
     &ukbd_no_leds, 0, "Disables setting of keyboard leds");
 SYSCTL_INT(_hw_usb_ukbd, OID_AUTO, pollrate, CTLFLAG_RWTUN,
@@ -133,7 +136,6 @@ SYSCTL_INT(_hw_usb_ukbd, OID_AUTO, swap_caps_ctrl, CTLFLAG_RWTUN,
     &ukbd_swap_caps_ctrl, 0, "swap caps_lock and left control when set to 1");
 SYSCTL_INT(_hw_usb_ukbd, OID_AUTO, swap_caps_esc, CTLFLAG_RWTUN,
     &ukbd_swap_caps_esc, 0, "swap caps_lock and escape when set to 1");
-#endif
 
 #define	UKBD_EMULATE_ATSCANCODE	       1
 #define	UKBD_DRIVER_NAME          "ukbd"
