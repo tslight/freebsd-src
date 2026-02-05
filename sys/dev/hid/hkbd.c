@@ -681,73 +681,76 @@ hkbd_apple_fn_media(uint32_t keycode)
 static uint32_t
 hkbd_sysctl(uint32_t keycode)
 {
+	uint32_t in = keycode;
+	uint32_t out = keycode;
+	
 	if (hkbd_jis_deadkeys) {
-		switch (keycode) {
-		case 0x90: keycode = 0xe4; break; /* HANGEUL -> RCTRL */
-		case 0x91: keycode = 0xe0; break; /* HANJA -> LCTRL */
-		case 0x87: keycode = 0x35; break; /* RO -> GRAVE */
-		case 0x89: keycode = 0x2a; break; /* YEN -> BACKSPACE */
+		switch (in) {
+		case 0x90: out = 0xe4; break; /* HANGEUL -> RCTRL */
+		case 0x91: out = 0xe0; break; /* HANJA -> LCTRL */
+		case 0x87: out = 0x35; break; /* RO -> GRAVE */
+		case 0x89: out = 0x2a; break; /* YEN -> BACKSPACE */
 		}
 	}
 
 	if (hkbd_space_cadet) {
-		switch (keycode) {
-		case 0xe0: keycode = 0xe3; break; /* LCTRL -> LMETA */
-		case 0xe2: keycode = 0xe0; break; /* LALT -> LCTRL */
-		case 0xe3: keycode = 0xe2; break; /* LMETA -> LALT */
-		case 0xe4: keycode = 0xe7; break; /* RCTRL -> RMETA */
-		case 0xe6: keycode = 0xe4; break; /* RALT -> RCTRL */
-		case 0xe7: keycode = 0xe6; break; /* RMETA -> RALT */
+		switch (in) {
+		case 0xe0: out = 0xe3; break; /* LCTRL -> LMETA */
+		case 0xe2: out = 0xe0; break; /* LALT -> LCTRL */
+		case 0xe3: out = 0xe2; break; /* LMETA -> LALT */
+		case 0xe4: out = 0xe7; break; /* RCTRL -> RMETA */
+		case 0xe6: out = 0xe4; break; /* RALT -> RCTRL */
+		case 0xe7: out = 0xe6; break; /* RMETA -> RALT */
 		}
 	} else if (hkbd_swap_alt_ctrl) {
-		switch (keycode) {
-		case 0xe2: keycode = 0xe0; break; /* LALT -> LCTRL */
-		case 0xe6: keycode = 0xe4; break; /* RALT -> RCTRL */
-		case 0xe0: keycode = 0xe2; break; /* LCTRL -> LALT */
-		case 0xe4: keycode = 0xe6; break; /* RCTRL -> RALT */
+		switch (in) {
+		case 0xe2: out = 0xe0; break; /* LALT -> LCTRL */
+		case 0xe6: out = 0xe4; break; /* RALT -> RCTRL */
+		case 0xe0: out = 0xe2; break; /* LCTRL -> LALT */
+		case 0xe4: out = 0xe6; break; /* RCTRL -> RALT */
 		}
 	} else if (hkbd_swap_alt_meta) {
-		switch (keycode) {
-		case 0xe3: keycode = 0xe2; break; /* LMETA -> LALT */
-		case 0xe7: keycode = 0xe6; break; /* RMETA -> RALT */
-		case 0xe2: keycode = 0xe3; break; /* LALT -> LMETA */
-		case 0xe6: keycode = 0xe7; break; /* RALT -> RMETA */
+		switch (in) {
+		case 0xe3: out = 0xe2; break; /* LMETA -> LALT */
+		case 0xe7: out = 0xe6; break; /* RMETA -> RALT */
+		case 0xe2: out = 0xe3; break; /* LALT -> LMETA */
+		case 0xe6: out = 0xe7; break; /* RALT -> RMETA */
 		}
 	} else if (hkbd_swap_ctrl_meta) {
-		switch (keycode) {
-		case 0xe3: keycode = 0xe0; break; /* LMETA -> LCTRL */
-		case 0xe7: keycode = 0xe4; break; /* RMETA -> RCTRL */
-		case 0xe0: keycode = 0xe3; break; /* LCTRL -> LMETA */
-		case 0xe4: keycode = 0xe7; break; /* RCTRL -> RMETA */
+		switch (in) {
+		case 0xe3: out = 0xe0; break; /* LMETA -> LCTRL */
+		case 0xe7: out = 0xe4; break; /* RMETA -> RCTRL */
+		case 0xe0: out = 0xe3; break; /* LCTRL -> LMETA */
+		case 0xe4: out = 0xe7; break; /* RCTRL -> RMETA */
 		}
 	}
 
 	if (hkbd_swap_caps_ctrl) {
-		switch (keycode) {
-		case 0x39: keycode = 0xe0; break; /* CAPS -> LCTRL */
-		case 0xe0: keycode = 0x39; break; /* LCTRL -> CAPS */
+		switch (in) {
+		case 0x39: out = 0xe0; break; /* CAPS -> LCTRL */
+		case 0xe0: out = 0x39; break; /* LCTRL -> CAPS */
 		}
 	} else if (hkbd_swap_caps_esc) {
-		switch (keycode) {
-		case 0x39: keycode = 0x29; break; /* CAPS -> ESC */
-		case 0x29: keycode = 0x39; break; /* ESC -> CAPS */
+		switch (in) {
+		case 0x39: out = 0x29; break; /* CAPS -> ESC */
+		case 0x29: out = 0x39; break; /* ESC -> CAPS */
 		}
 	} else if (hkbd_swap_caps_esc_apple_jis) {
-		switch (keycode) {
-		case 0xe0: keycode = 0x29; break; /* LCTRL -> ESC */
-		case 0x39: keycode = 0xe0; break; /* CAPS -> LCTRL */
-		case 0x29: keycode = 0x39; break; /* ESC - > CAPS */
+		switch (in) {
+		case 0xe0: out = 0x29; break; /* LCTRL -> ESC */
+		case 0x39: out = 0xe0; break; /* CAPS -> LCTRL */
+		case 0x29: out = 0x39; break; /* ESC - > CAPS */
 		}
 	}
 
 	if (hkbd_swap_grave_102) {
-		switch (keycode) {
-		case 0x35: keycode = 0x64; break; /* GRAVE -> 102ND */
-		case 0x64: keycode = 0x35; break; /* 102ND -> GRAVE */
+		switch (in) {
+		case 0x35: out = 0x64; break; /* GRAVE -> 102ND */
+		case 0x64: out = 0x35; break; /* 102ND -> GRAVE */
 		}
 	}
 
-	return keycode;
+	return out;
 }
 
 static void
