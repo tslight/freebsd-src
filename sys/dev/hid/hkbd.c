@@ -683,7 +683,7 @@ hkbd_sysctl(uint32_t keycode)
 {
 	uint32_t in = keycode;
 	uint32_t out = keycode;
-	
+
 	if (hkbd_jis_deadkeys) {
 		switch (in) {
 		case 0x90: out = 0xe4; break; /* HANGEUL -> RCTRL */
@@ -789,8 +789,10 @@ hkbd_intr_callback(void *context, void *data, hid_size_t len)
 		memset(&sc->sc_ndata0, 0, bitstr_size(HKBD_NKEYCODE));
 	}
 	bit_foreach(sc->sc_ndata, HKBD_NKEYCODE, i)
-		if (id == sc->sc_id_loc_key[i])
-			bit_clear(sc->sc_ndata, i);
+		if (id == sc->sc_id_loc_key[i]) {
+			uint32_t k = hkbd_sysctl(i);
+			bit_clear(sc->sc_ndata, k);
+		}
 
 	/* clear modifiers */
 	modifiers = 0;
