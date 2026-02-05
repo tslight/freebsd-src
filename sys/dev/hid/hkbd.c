@@ -98,12 +98,15 @@ static int hkbd_debug = 0;
 #endif
 static int hkbd_no_leds = 0;
 static int hkbd_apple_fn_mode = 0;
+static int hkbd_han_to_ctrl = 0;
+static int hkbd_jis_deadkeys = 0;
 static int hkbd_space_cadet = 0;
 static int hkbd_swap_alt_ctrl = 0;
 static int hkbd_swap_alt_meta = 0;
 static int hkbd_swap_ctrl_meta = 0;
 static int hkbd_swap_caps_ctrl = 0;
 static int hkbd_swap_caps_esc = 0;
+static int hkbd_swap_caps_esc_apple_jis = 0;
 
 static SYSCTL_NODE(_hw_hid, OID_AUTO, hkbd, CTLFLAG_RW, 0, "USB keyboard");
 #ifdef HID_DEBUG
@@ -114,13 +117,15 @@ SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, no_leds, CTLFLAG_RWTUN,
     &hkbd_no_leds, 0, "Disables setting of keyboard leds");
 SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, apple_fn_mode, CTLFLAG_RWTUN,
     &hkbd_apple_fn_mode, 0, "0 = Fn + F1..12 -> media, 1 = F1..F12 -> media");
+/* jis enhancements/fixes for non-japanese users */
+SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, jis_deadkeys, CTLFLAG_RWTUN,
+    &hkbd_jis_deadkeys, 0, "revive jis layout deadkeys for non-japanese users");
 /* modifier key changes */
 SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, space_cadet, CTLFLAG_RWTUN,
     &hkbd_space_cadet, 0,
     "space cadet modifier layout (win>alt>ctrl>spc<ctrl<alt<win) when set to 1");
 SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, swap_alt_ctrl, CTLFLAG_RWTUN,
-    &hkbd_swap_alt_ctrl, 0,
-    "swap alt (option) and control keys when set to 1");
+    &hkbd_swap_alt_ctrl, 0, "swap alt (option) and control keys when set to 1");
 SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, swap_alt_meta, CTLFLAG_RWTUN,
     &hkbd_swap_alt_meta, 0,
     "swap alt (option) and meta (windows/command/super) keys when set to 1");
@@ -132,6 +137,8 @@ SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, swap_caps_ctrl, CTLFLAG_RWTUN,
     &hkbd_swap_caps_ctrl, 0, "swap caps_lock and left control when set to 1");
 SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, swap_caps_esc, CTLFLAG_RWTUN,
     &hkbd_swap_caps_esc, 0, "swap caps_lock and escape when set to 1");
+SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, caps_esc_apple_jis, CTLFLAG_RWTUN,
+    &hkbd_cap_esc_apple_jis, 0, "swap caps_lock and escape for apple jis layout");
 
 #define	INPUT_EPOCH	global_epoch_preempt
 
@@ -677,6 +684,56 @@ hkbd_apple_fn_media(uint32_t keycode)
 }
 
 static uint32_t
+hkbd_apple_swap(uint32_t keycode)
+{
+	switch (keycode) {
+	case 0x35: return 0x64;
+	case 0x64: return 0x35;
+	default: return keycode;
+	}
+}
+
+static uint32_t
+hkbd_swap_caps(uint32_t keycode)
+{
+	if (hkbd_swap_caps_ctrl) {
+		switch (keycode) {
+		case 0x39: return 0xe0; /* CAPS -> LCTRL */
+		case 0xe0: return 0x39; /* LCTRL -> CAPS */
+		default: return keycode;
+		}
+	} else if (hkbd_swap_caps_esc) {
+		switch (keycode) {
+		case 0x39: return 0x29; /* CAPS -> ESC */
+		case 0x29: return 0x39; /* ESC -> CAPS */
+		default: return keycode;
+		}
+	} else if (hkbd_swap_caps_esc_apple_jis) {
+		switch (keycode) {
+		case 0x39: return 0xe0; /* CAPS -> LCTRL */
+		case 0xe0: return 0x29; /* LCTRL -> ESC */
+		case 0x29: return 0x39; /* ESC - > CAPS */
+		default: return keycode;
+		}
+	}
+	return keycode;
+}
+
+static uint32_t
+hkbd_swap_jis(uint32_t keycode)
+{
+	if (hkbd_jis_deadkeys) {
+		switch (keycode) {
+		case 0x90: return 0xe0; /* HANGEUL -> LCTRL */
+		case 0x91: return 0xe4; /* HANJA -> RCTRL */
+		case 0x87: return 0x35; /* RO -> BACKTICK */
+		case 0x89: return 0x30; /* YEN -> BACKSPACE */
+		default: return keycode;
+		}
+	}
+}
+
+static uint32_t
 hkbd_swap_modifiers(uint32_t keycode)
 {
 	if (hkbd_space_cadet) {
@@ -713,35 +770,6 @@ hkbd_swap_modifiers(uint32_t keycode)
 		}
 	}
 	return keycode;
-}
-
-static uint32_t
-hkbd_swap_caps(uint32_t keycode)
-{
-	if (hkbd_swap_caps_ctrl) {
-		switch (keycode) {
-		case 0x39: return 0xe0; /* CAPS -> LCTRL */
-		case 0xe0: return 0x39; /* LCTRL -> CAPS */
-		default: return keycode;
-		}
-	} else if (hkbd_swap_caps_esc) {
-		switch (keycode) {
-		case 0x39: return 0x29; /* CAPS -> ESC */
-		case 0x29: return 0x39; /* ESC -> CAPS */
-		default: return keycode;
-		}
-	}
-	return keycode;
-}
-
-static uint32_t
-hkbd_apple_swap(uint32_t keycode)
-{
-	switch (keycode) {
-	case 0x35: return 0x64;
-	case 0x64: return 0x35;
-	default: return keycode;
-	}
 }
 
 static void
@@ -832,6 +860,7 @@ hkbd_intr_callback(void *context, void *data, hid_size_t len)
 					return;	/* ignore */
 				}
 				key = hkbd_swap_caps(key);
+				key = hkbd_swap_jis(key);
 				key = hkbd_swap_modifiers(key);
 				if (modifiers & MOD_FN)
 					key = hkbd_apple_fn(key);
@@ -848,6 +877,7 @@ hkbd_intr_callback(void *context, void *data, hid_size_t len)
 		} else if (hid_get_data(buf, len, &sc->sc_loc_key[i])) {
 			uint32_t key = i;
 			key = hkbd_swap_caps(key);
+			key = hkbd_swap_jis(key);
 			key = hkbd_swap_modifiers(key);
 			if (modifiers & MOD_FN)
 				key = hkbd_apple_fn(key);
