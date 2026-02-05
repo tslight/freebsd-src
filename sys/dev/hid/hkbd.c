@@ -679,7 +679,7 @@ hkbd_apple_fn_media(uint32_t keycode)
 }
 
 static uint32_t
-hkbd_sysctl(uint32_t keycode)
+hkbd_sysctl(struct hkbd_softc *sc, uint32_t keycode)
 {
 	uint32_t in = keycode;
 	uint32_t out = keycode;
@@ -750,6 +750,7 @@ hkbd_sysctl(uint32_t keycode)
 		}
 	}
 
+	bit_clear(sc->sc_ndata, out);
 	return out;
 }
 
@@ -789,10 +790,8 @@ hkbd_intr_callback(void *context, void *data, hid_size_t len)
 		memset(&sc->sc_ndata0, 0, bitstr_size(HKBD_NKEYCODE));
 	}
 	bit_foreach(sc->sc_ndata, HKBD_NKEYCODE, i)
-		if (id == sc->sc_id_loc_key[i]) {
-			uint32_t k = hkbd_sysctl(i);
-			bit_clear(sc->sc_ndata, k);
-		}
+		if (id == sc->sc_id_loc_key[i])
+			bit_clear(sc->sc_ndata, i);
 
 	/* clear modifiers */
 	modifiers = 0;
@@ -842,7 +841,7 @@ hkbd_intr_callback(void *context, void *data, hid_size_t len)
 					    bitstr_size(HKBD_NKEYCODE));
 					return;	/* ignore */
 				}
-				key = hkbd_sysctl(key);
+				key = hkbd_sysctl(sc, key);
 				if (modifiers & MOD_FN)
 					key = hkbd_apple_fn(key);
 				if (apply_apple_fn_media)
@@ -855,7 +854,7 @@ hkbd_intr_callback(void *context, void *data, hid_size_t len)
 			}
 		} else if (hid_get_data(buf, len, &sc->sc_loc_key[i])) {
 			uint32_t key = i;
-			key = hkbd_sysctl(key);
+			key = hkbd_sysctl(sc, key);
 			if (modifiers & MOD_FN)
 				key = hkbd_apple_fn(key);
 			if (apply_apple_fn_media)
