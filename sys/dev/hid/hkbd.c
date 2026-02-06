@@ -98,14 +98,9 @@ static int hkbd_debug = 0;
 #endif
 static int hkbd_no_leds = 0;
 static int hkbd_apple_fn_mode = 0;
-static int hkbd_jis_deadkeys = 0;
-static int hkbd_space_cadet = 0;
-static int hkbd_swap_alt_ctrl = 0;
-static int hkbd_swap_alt_meta = 0;
-static int hkbd_swap_ctrl_meta = 0;
-static int hkbd_swap_caps_ctrl = 0;
+static int hkbd_apple_jis_to_iso = 0;
+static int hkbd_swap_cmd_ctrl = 0;
 static int hkbd_swap_caps_esc = 0;
-static int hkbd_swap_caps_esc_apple_jis = 0;
 static int hkbd_swap_grave_102 = 0;
 
 static SYSCTL_NODE(_hw_hid, OID_AUTO, hkbd, CTLFLAG_RW, 0, "USB keyboard");
@@ -114,25 +109,15 @@ SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, debug, CTLFLAG_RWTUN,
     &hkbd_debug, 0, "Debug level");
 #endif
 SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, no_leds, CTLFLAG_RWTUN,
-    &hkbd_no_leds, 0, "Disables setting of keyboard leds");
+    &hkbd_no_leds, 0, "Disables setting of keyboard LEDS");
 SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, apple_fn_mode, CTLFLAG_RWTUN,
-    &hkbd_apple_fn_mode, 0, "Access media keys without holding function");
-SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, jis_deadkeys, CTLFLAG_RWTUN,
-    &hkbd_jis_deadkeys, 0, "Revive JIS deadkeys for non-japanese users");
-SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, space_cadet, CTLFLAG_RWTUN,
-    &hkbd_space_cadet, 0, "Space Cadet modifier layout");
-SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, swap_alt_ctrl, CTLFLAG_RWTUN,
-    &hkbd_swap_alt_ctrl, 0, "Swap alt & control keys");
-SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, swap_alt_meta, CTLFLAG_RWTUN,
-    &hkbd_swap_alt_meta, 0, "Swap alt & meta keys");
-SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, swap_ctrl_meta, CTLFLAG_RWTUN,
-    &hkbd_swap_ctrl_meta, 0, "Swap control & meta keys");
-SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, swap_caps_ctrl, CTLFLAG_RWTUN,
-    &hkbd_swap_caps_ctrl, 0, "Swap caps_lock & left control");
+    &hkbd_apple_fn_mode, 0, "Access media keys without holding Function");
+SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, apple_jis_to_iso, CTLFLAG_RWTUN,
+    &hkbd_apple_jis_to_iso, 0, "Apple JIS layout for non-Japanese users");
+SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, swap_cmd_ctrl, CTLFLAG_RWTUN,
+    &hkbd_swap_cmd_ctrl, 0, "Swap Command & Control keys");
 SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, swap_caps_esc, CTLFLAG_RWTUN,
-    &hkbd_swap_caps_esc, 0, "Swap caps_lock & escape");
-SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, swap_caps_esc_apple_jis, CTLFLAG_RWTUN,
-    &hkbd_swap_caps_esc_apple_jis, 0, "Swap caps & esc for Apple jis layout");
+    &hkbd_swap_caps_esc, 0, "Swap Caps_Lock & Escape");
 SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, swap_grave_102, CTLFLAG_RWTUN,
     &hkbd_swap_grave_102, 0, "Swap grave and 102nd key");
 
@@ -157,8 +142,8 @@ SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, swap_grave_102, CTLFLAG_RWTUN,
 #define MOD_MAX     0xe7
 
 /* check evdev_usb_scancodes[] for names */
-#define APPLE_FN_KEY 0xff
-#define APPLE_EJECT_KEY 0xec
+static uint32_t APPLE_FN_KEY = 0xff;
+static uint32_t APPLE_EJECT_KEY = 0xec;
 
 struct hkbd_softc {
 	device_t sc_dev;
@@ -684,39 +669,24 @@ hkbd_sysctl(struct hkbd_softc *sc, uint32_t keycode)
 	uint32_t in = keycode;
 	uint32_t out = keycode;
 
-	if (hkbd_jis_deadkeys) {
+	if (hkbd_apple_jis_to_iso) {
 		switch (in) {
-		case 0x90: out = 0xe4; break; /* HANGEUL -> RCTRL */
-		case 0x91: out = 0xe0; break; /* HANJA -> LCTRL */
-		case 0x87: out = 0x35; break; /* RO -> GRAVE */
-		case 0x89: out = 0x2a; break; /* YEN -> BACKSPACE */
+		case 0x90: out = 0xe4; break; /* HANGEUL-> RCTRL */
+		case 0x91: out = 0xe4; break; /* HANJA	-> RCTRL */
+		case 0xe3: out = 0xe2; break; /* LMETA	-> LALT */
+		case 0xe7: out = 0xe6; break; /* RMETA	-> RALT */
+		case 0xe2: out = 0xe3; break; /* LALT	-> LMETA */
+		case 0xff:
+			APPLE_FN_KEY = 0xe7;
+			out = 0xe7;
+			break;                /* FN	-> RMETA */
+		case 0x39: out = 0xff; break; /* CAPS	-> FN */
+		case 0xe0: out = 0x29; break; /* LCTRL	-> ESC */
+		case 0x29: out = 0x39; break; /* ESC	-> CAPS */
+		case 0x87: out = 0x35; break; /* RO	-> GRAVE */
+		case 0x89: out = 0x2a; break; /* YEN	-> BACKSPACE */
 		}
-	}
-
-	if (hkbd_space_cadet) {
-		switch (in) {
-		case 0xe0: out = 0xe3; break; /* LCTRL -> LMETA */
-		case 0xe2: out = 0xe0; break; /* LALT -> LCTRL */
-		case 0xe3: out = 0xe2; break; /* LMETA -> LALT */
-		case 0xe4: out = 0xe7; break; /* RCTRL -> RMETA */
-		case 0xe6: out = 0xe4; break; /* RALT -> RCTRL */
-		case 0xe7: out = 0xe6; break; /* RMETA -> RALT */
-		}
-	} else if (hkbd_swap_alt_ctrl) {
-		switch (in) {
-		case 0xe2: out = 0xe0; break; /* LALT -> LCTRL */
-		case 0xe6: out = 0xe4; break; /* RALT -> RCTRL */
-		case 0xe0: out = 0xe2; break; /* LCTRL -> LALT */
-		case 0xe4: out = 0xe6; break; /* RCTRL -> RALT */
-		}
-	} else if (hkbd_swap_alt_meta) {
-		switch (in) {
-		case 0xe3: out = 0xe2; break; /* LMETA -> LALT */
-		case 0xe7: out = 0xe6; break; /* RMETA -> RALT */
-		case 0xe2: out = 0xe3; break; /* LALT -> LMETA */
-		case 0xe6: out = 0xe7; break; /* RALT -> RMETA */
-		}
-	} else if (hkbd_swap_ctrl_meta) {
+	} else if (hkbd_swap_cmd_ctrl) {
 		switch (in) {
 		case 0xe3: out = 0xe0; break; /* LMETA -> LCTRL */
 		case 0xe7: out = 0xe4; break; /* RMETA -> RCTRL */
@@ -725,21 +695,10 @@ hkbd_sysctl(struct hkbd_softc *sc, uint32_t keycode)
 		}
 	}
 
-	if (hkbd_swap_caps_ctrl) {
-		switch (in) {
-		case 0x39: out = 0xe0; break; /* CAPS -> LCTRL */
-		case 0xe0: out = 0x39; break; /* LCTRL -> CAPS */
-		}
-	} else if (hkbd_swap_caps_esc) {
+	if (hkbd_swap_caps_esc) {
 		switch (in) {
 		case 0x39: out = 0x29; break; /* CAPS -> ESC */
 		case 0x29: out = 0x39; break; /* ESC -> CAPS */
-		}
-	} else if (hkbd_swap_caps_esc_apple_jis) {
-		switch (in) {
-		case 0xe0: out = 0x29; break; /* LCTRL -> ESC */
-		case 0x39: out = 0xe0; break; /* CAPS -> LCTRL */
-		case 0x29: out = 0x39; break; /* ESC - > CAPS */
 		}
 	}
 
@@ -750,7 +709,8 @@ hkbd_sysctl(struct hkbd_softc *sc, uint32_t keycode)
 		}
 	}
 
-	bit_clear(sc->sc_ndata, out);
+	/* bit_clear(sc->sc_ndata, in); */
+	/* bit_clear(sc->sc_ndata, out); */
 	return out;
 }
 
