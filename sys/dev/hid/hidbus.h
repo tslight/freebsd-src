@@ -26,6 +26,12 @@
 #ifndef _HID_HIDBUS_H_
 #define _HID_HIDBUS_H_
 
+/* Forward declaration for keyboard remapping hook - type defined in hid.h */
+typedef uint32_t (*hidbus_kbd_remap_fn_t)(uint32_t);
+
+int hidbus_register_kbd_remap_hook(hidbus_kbd_remap_fn_t fn);
+void hidbus_unregister_kbd_remap_hook(hidbus_kbd_remap_fn_t fn);
+
 enum {
 	HIDBUS_IVAR_USAGE,
 	HIDBUS_IVAR_INDEX,

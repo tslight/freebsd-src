@@ -51,6 +51,36 @@
 #define	INPUT_EPOCH	global_epoch_preempt
 #define	HID_RSIZE_MAX	1024
 
+/* Keyboard remapping infrastructure */
+hidbus_kbd_remap_fn_t hidbus_kbd_remap_hook = NULL;
+static struct mtx hidbus_remap_mtx;
+MTX_SYSINIT(hidbus_remap, &hidbus_remap_mtx, "hidbus remap", MTX_DEF);
+
+int
+hidbus_register_kbd_remap_hook(hidbus_kbd_remap_fn_t fn)
+{
+	int error = 0;
+	
+	mtx_lock(&hidbus_remap_mtx);
+	if (hidbus_kbd_remap_hook != NULL) {
+		error = EBUSY;
+	} else {
+		hidbus_kbd_remap_hook = fn;
+	}
+	mtx_unlock(&hidbus_remap_mtx);
+	
+	return (error);
+}
+
+void
+hidbus_unregister_kbd_remap_hook(hidbus_kbd_remap_fn_t fn)
+{
+	mtx_lock(&hidbus_remap_mtx);
+	if (hidbus_kbd_remap_hook == fn)
+		hidbus_kbd_remap_hook = NULL;
+	mtx_unlock(&hidbus_remap_mtx);
+}
+
 static hid_intr_t	hidbus_intr;
 
 static device_probe_t	hidbus_probe;

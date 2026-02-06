@@ -30,6 +30,9 @@
 #ifndef _HID_HID_H_
 #define	_HID_HID_H_
 
+/* Forward declaration for keyboard remapping hook */
+typedef uint32_t (*hidbus_kbd_remap_fn_t)(uint32_t);
+
 /* Usage pages */
 #define	HUP_UNDEFINED		0x0000
 #define	HUP_GENERIC_DESKTOP	0x0001
@@ -308,6 +311,8 @@ struct hid_rdesc_info {
 typedef void hid_intr_t(void *context, void *data, hid_size_t len);
 typedef bool hid_test_quirk_t(const struct hid_device_info *dev_info,
     uint16_t quirk);
+/* Forward declaration for keyboard remapping */
+typedef uint32_t (*hidbus_kbd_remap_fn_t)(uint32_t);
 
 extern hid_test_quirk_t *hid_test_quirk_p;
 
@@ -333,6 +338,22 @@ int	hid_is_collection(const void *desc, hid_size_t size, int32_t usage);
 int32_t	hid_item_resolution(struct hid_item *hi);
 int	hid_is_mouse(const void *d_ptr, uint16_t d_len);
 int	hid_is_keyboard(const void *d_ptr, uint16_t d_len);
+/* Keyboard usage code extraction with remapping support */
+static inline uint32_t
+hid_get_udata_kbd(const uint8_t *buf, hid_size_t len, struct hid_location *loc)
+{
+	extern hidbus_kbd_remap_fn_t hidbus_kbd_remap_hook;
+	uint32_t data;
+	
+	data = hid_get_udata(buf, len, loc);
+	
+	/* Apply keyboard remapping if hook is registered */
+	if (hidbus_kbd_remap_hook != NULL && data > 0 && data <= 0xFF) {
+		data = hidbus_kbd_remap_hook(data);
+	}
+	
+	return (data);
+}
 bool	hid_test_quirk(const struct hid_device_info *dev_info, uint16_t quirk);
 int	hid_add_dynamic_quirk(struct hid_device_info *dev_info,
 	    uint16_t quirk);

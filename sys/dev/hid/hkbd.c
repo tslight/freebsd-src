@@ -737,8 +737,10 @@ hkbd_intr_callback(void *context, void *data, hid_size_t len)
 			if (tmp_loc.count > HKBD_NKEYCODE)
 				tmp_loc.count = HKBD_NKEYCODE;
 			while (tmp_loc.count--) {
-				uint32_t key =
-				    hid_get_udata(buf, len, &tmp_loc);
+				/* uint32_t key = */
+				/*     hid_get_udata(buf, len, &tmp_loc); */
+				uint32_t key = hid_get_udata_kbd(buf, len,
+				    &tmp_loc);
 				/* advance to next location */
 				tmp_loc.pos += tmp_loc.size;
 				if (key == KEY_ERROR) {

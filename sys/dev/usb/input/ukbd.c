@@ -95,21 +95,23 @@
 
 #ifdef USB_DEBUG
 static int ukbd_debug = 0;
+#endif
 static int ukbd_no_leds = 0;
 static int ukbd_pollrate = 0;
 static int ukbd_apple_fn_mode = 0;
 
 static SYSCTL_NODE(_hw_usb, OID_AUTO, ukbd, CTLFLAG_RW | CTLFLAG_MPSAFE, 0,
     "USB keyboard");
+#ifdef USB_DEBUG
 SYSCTL_INT(_hw_usb_ukbd, OID_AUTO, debug, CTLFLAG_RWTUN,
     &ukbd_debug, 0, "Debug level");
+#endif
 SYSCTL_INT(_hw_usb_ukbd, OID_AUTO, no_leds, CTLFLAG_RWTUN,
     &ukbd_no_leds, 0, "Disables setting of keyboard leds");
 SYSCTL_INT(_hw_usb_ukbd, OID_AUTO, pollrate, CTLFLAG_RWTUN,
     &ukbd_pollrate, 0, "Force this polling rate, 1-1000Hz");
 SYSCTL_INT(_hw_usb_ukbd, OID_AUTO, apple_fn_mode, CTLFLAG_RWTUN,
     &ukbd_apple_fn_mode, 0, "0 = Fn + F1..12 -> media, 1 = F1..F12 -> media");
-#endif
 
 #define	UKBD_EMULATE_ATSCANCODE	       1
 #define	UKBD_DRIVER_NAME          "ukbd"
@@ -814,8 +816,10 @@ ukbd_intr_callback(struct usb_xfer *xfer, usb_error_t error)
 				if (tmp_loc.count > UKBD_NKEYCODE)
 					tmp_loc.count = UKBD_NKEYCODE;
 				while (tmp_loc.count--) {
-					uint32_t key =
-					    hid_get_udata(sc->sc_buffer, len, &tmp_loc);
+					uint32_t key = hid_get_udata_kbd(
+					    sc->sc_buffer, len, &tmp_loc);
+					/* uint32_t key = hid_get_udata( */
+					/*     sc->sc_buffer, len, &tmp_loc); */
 					/* advance to next location */
 					tmp_loc.pos += tmp_loc.size;
 					if (key == KEY_ERROR) {
