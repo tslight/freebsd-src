@@ -523,12 +523,17 @@ hkbd_interrupt(struct hkbd_softc *sc)
 	 * both a modifier key and a regular key, to be correctly
 	 * translated. */
 	bit_foreach(sc->sc_odata, HKBD_NKEYCODE, key) {
+    		printf("hkbd: CHECKING 0x%02x, is_modifier=%d, in_ndata=%d\n",
+			key, hkbd_is_modifier_key(key), bit_test(sc->sc_ndata, key));
 		if (hkbd_is_modifier_key(key) || bit_test(sc->sc_ndata, key))
 			continue;
+
+		printf("hkbd: RELEASING 0x%02x\n", key);
 		hkbd_put_key(sc, key | KEY_RELEASE);
 
 		/* clear repeating key, if any */
 		if (sc->sc_repeat_key == key)
+			printf("hkbd: CLEARING 0x%02x\n", key);
 			sc->sc_repeat_key = 0;
 	}
 	bit_foreach_at(sc->sc_odata, MOD_MIN, MOD_MAX + 1, key)
@@ -796,6 +801,10 @@ hkbd_intr_callback(void *context, void *data, hid_size_t len)
 		} else if (i == 0) {
 			struct hid_location tmp_loc = sc->sc_loc_key[0];
 			/* range check array size */
+			printf("hkbd: PRINTING array keys, ndata0 bits:");
+			bit_foreach(sc->sc_ndata0, HKBD_NKEYCODE, i)
+			    printf(" 0x%02x", i);
+			printf("\n"); /* range check array size */
 			if (tmp_loc.count > HKBD_NKEYCODE)
 				tmp_loc.count = HKBD_NKEYCODE;
 			while (tmp_loc.count--) {
@@ -803,6 +812,8 @@ hkbd_intr_callback(void *context, void *data, hid_size_t len)
 				    hid_get_udata(buf, len, &tmp_loc);
 				/* advance to next location */
 				tmp_loc.pos += tmp_loc.size;
+				printf("hkbd: HID array contains: 0x%02x\n",
+				    key);
 				if (key == KEY_ERROR) {
 					DPRINTF("KEY_ERROR\n");
 					memcpy(sc->sc_ndata0, sc->sc_odata0,
@@ -814,7 +825,7 @@ hkbd_intr_callback(void *context, void *data, hid_size_t len)
 				uint32_t orig_key = key; // DEBUG
 				key = hkbd_sysctl(sc, key);
 				if (orig_key != key)
-					printf("hkbd: array: 0x%02x -> 0x%02x\n", orig_key, key);
+					printf("hkbd: ARRAY: 0x%02x -> 0x%02x\n", orig_key, key);
 				if (modifiers & MOD_FN)
 					key = hkbd_apple_fn(key);
 				if (apply_apple_fn_media)
@@ -824,13 +835,17 @@ hkbd_intr_callback(void *context, void *data, hid_size_t len)
 				/* set key in bitmap */
 				bit_set(sc->sc_ndata, key);
 				bit_set(sc->sc_ndata0, key);
+				printf(
+				    "hkbd: set ndata[0x%02x] and ndata0[0x%02x]\n",
+				    key, key);
 			}
 		} else if (hid_get_data(buf, len, &sc->sc_loc_key[i])) {
 			uint32_t key = i;
 			uint32_t orig_key = key; // DEBUG
 			key = hkbd_sysctl(sc, key);
 			if (orig_key != key)
-				printf("hkbd: array: 0x%02x -> 0x%02x\n", orig_key, key);
+				printf("hkbd: BIT[%d]: 0x%02x -> 0x%02x\n", i,
+				    orig_key, key);
 			if (modifiers & MOD_FN)
 				key = hkbd_apple_fn(key);
 			if (apply_apple_fn_media)
@@ -839,14 +854,17 @@ hkbd_intr_callback(void *context, void *data, hid_size_t len)
 				continue;
 			/* set key in bitmap */
 			bit_set(sc->sc_ndata, key);
+			printf("hkbd: set ndata[0x%02x] ONLY\n", key);
 		}
 	}
 #ifdef HID_DEBUG
 	DPRINTF("modifiers = 0x%04x\n", modifiers);
-	printf("hkbd: before interrupt: ndata bits set:");
+	bit_foreach(sc->sc_ndata, HKBD_NKEYCODE, i)
+		DPRINTF("Key 0x%02x pressed\n", i);
+#endif
+	printf("hkbd: BEFORE INTERRUPT: ndata bits set:");
 	bit_foreach(sc->sc_ndata, HKBD_NKEYCODE, i)
 		printf("Key 0x%02x pressed\n", i);
-#endif
 	hkbd_interrupt(sc);
 }
 
