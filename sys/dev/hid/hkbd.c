@@ -503,7 +503,15 @@ hkbd_interrupt(struct hkbd_softc *sc)
 	unsigned key;
 
 	HKBD_LOCK_ASSERT(sc);
-
+	
+	printf("hkbd_interrupt: START - odata bits:"); // DEBUG
+	bit_foreach(sc->sc_odata, HKBD_NKEYCODE, key)
+		printf(" 0x%02x", key);
+	printf(", ndata bits:");
+	bit_foreach(sc->sc_ndata, HKBD_NKEYCODE, key)
+		printf(" 0x%02x", key);
+	printf("\n");
+	
 	/*
 	 * Check for key changes, the order is:
 	 * 1. Regular keys up
@@ -548,6 +556,11 @@ hkbd_interrupt(struct hkbd_softc *sc)
 	memcpy(sc->sc_odata0, sc->sc_ndata0, bitstr_size(HKBD_NKEYCODE));
 	memcpy(sc->sc_odata, sc->sc_ndata, bitstr_size(HKBD_NKEYCODE));
 
+	printf("hkbd_interrupt: END - odata now:"); // DEBUG
+	bit_foreach(sc->sc_odata, HKBD_NKEYCODE, key)
+		printf(" 0x%02x", key);
+	printf(", repeat_key=0x%02x\n", sc->sc_repeat_key);
+	
 	/* check if last key is still pressed */
 	if (sc->sc_repeat_key != 0) {
 		const int32_t dtime = (sc->sc_repeat_time - now);
@@ -676,10 +689,7 @@ hkbd_sysctl(struct hkbd_softc *sc, uint32_t keycode)
 		case 0xe3: out = 0xe2; break; /* LMETA	-> LALT */
 		case 0xe7: out = 0xe6; break; /* RMETA	-> RALT */
 		case 0xe2: out = 0xe3; break; /* LALT	-> LMETA */
-		case 0xff:
-			APPLE_FN_KEY = 0xe7;
-			out = 0xe7;
-			break;                /* FN	-> RMETA */
+		case 0xff: out = 0xe7; break; /* FN	-> RMETA */
 		case 0x39: out = 0xff; break; /* CAPS	-> FN */
 		case 0xe0: out = 0x29; break; /* LCTRL	-> ESC */
 		case 0x29: out = 0x39; break; /* ESC	-> CAPS */
@@ -801,7 +811,10 @@ hkbd_intr_callback(void *context, void *data, hid_size_t len)
 					    bitstr_size(HKBD_NKEYCODE));
 					return;	/* ignore */
 				}
+				uint32_t orig_key = key; // DEBUG
 				key = hkbd_sysctl(sc, key);
+				if (orig_key != key)
+					printf("hkbd: array: 0x%02x -> 0x%02x\n", orig_key, key);
 				if (modifiers & MOD_FN)
 					key = hkbd_apple_fn(key);
 				if (apply_apple_fn_media)
@@ -814,7 +827,10 @@ hkbd_intr_callback(void *context, void *data, hid_size_t len)
 			}
 		} else if (hid_get_data(buf, len, &sc->sc_loc_key[i])) {
 			uint32_t key = i;
+			uint32_t orig_key = key; // DEBUG
 			key = hkbd_sysctl(sc, key);
+			if (orig_key != key)
+				printf("hkbd: array: 0x%02x -> 0x%02x\n", orig_key, key);
 			if (modifiers & MOD_FN)
 				key = hkbd_apple_fn(key);
 			if (apply_apple_fn_media)
@@ -827,8 +843,9 @@ hkbd_intr_callback(void *context, void *data, hid_size_t len)
 	}
 #ifdef HID_DEBUG
 	DPRINTF("modifiers = 0x%04x\n", modifiers);
+	printf("hkbd: before interrupt: ndata bits set:");
 	bit_foreach(sc->sc_ndata, HKBD_NKEYCODE, i)
-		DPRINTF("Key 0x%02x pressed\n", i);
+		printf("Key 0x%02x pressed\n", i);
 #endif
 	hkbd_interrupt(sc);
 }
