@@ -1,7 +1,7 @@
 /*-
  * SPDX-License-Identifier: BSD-2-Clause
  *
- * Copyright (c) 2025
+ * Copyright (c) 2025 Toby Slight
  *
  * Kernel-level keyboard remapping for HID keyboards.
  * Remaps HID usage codes universally for all keyboard drivers.
@@ -17,7 +17,7 @@
 #include <sys/lock.h>
 #include <sys/mutex.h>
 
-/* Forward declarations - avoid including hidbus.h which has complex macros */
+/* avoid including hidbus.h which has complex macros */
 typedef uint32_t (*hidbus_kbd_remap_fn_t)(uint32_t);
 int hidbus_register_kbd_remap_hook(hidbus_kbd_remap_fn_t fn);
 void hidbus_unregister_kbd_remap_hook(hidbus_kbd_remap_fn_t fn);
@@ -37,21 +37,15 @@ static struct {
 
 MTX_SYSINIT(kbdremap_mtx, &kbdremap_state.mtx, "kbdremap", MTX_DEF);
 
-/*
- * Translate a HID keyboard usage code.
- * This is called from hid_get_udata_kbd() for every keyboard key read.
- */
 static uint32_t
 kbdremap_translate(uint32_t usage)
 {
 	uint32_t result;
 	int i;
 
-	/* Fast path: no rules configured */
 	if (kbdremap_state.count == 0)
 		return (usage);
 
-	/* Only remap keyboard usage codes (0x00-0xFF) */
 	if (usage > 0xFF)
 		return (usage);
 
@@ -69,14 +63,6 @@ kbdremap_translate(uint32_t usage)
 	return (result);
 }
 
-/*
- * Sysctl handler for remap rules.
- * Format: "0xFROM:0xTO,0xFROM:0xTO,..."
- *
- * Examples:
- *   Swap Caps and Esc: "0x39:0x29,0x29:0x39"
- *   Apple JIS to ISO:  "0xe0:0x29,0x29:0x39,0x39:0xff,0x91:0xe4"
- */
 static int
 sysctl_kbdremap_rules(SYSCTL_HANDLER_ARGS)
 {
@@ -87,7 +73,6 @@ sysctl_kbdremap_rules(SYSCTL_HANDLER_ARGS)
 	struct kbdremap_rule new_rules[KBDREMAP_MAX_RULES];
 	unsigned long from, to;
 	
-	/* Build current rules string */
 	current[0] = '\0';
 	mtx_lock(&kbdremap_state.mtx);
 	for (i = 0; i < kbdremap_state.count; i++) {
@@ -100,15 +85,15 @@ sysctl_kbdremap_rules(SYSCTL_HANDLER_ARGS)
 	}
 	mtx_unlock(&kbdremap_state.mtx);
 	
-	/* Copy current value to buf for sysctl_handle_string */
+	/* current value to buf for sysctl_handle_string */
 	strlcpy(buf, current, sizeof(buf));
 	
-	/* Handle the sysctl - buf will be updated with new value if user is setting */
+	/* buf will be updated with new value user is setting */
 	error = sysctl_handle_string(oidp, buf, sizeof(buf), req);
 	if (error != 0 || req->newptr == NULL)
 		return (error);
 	
-	/* Parse new rules from buf */
+	/* parse new rules */
 	new_count = 0;
 	p = buf;
 	
@@ -126,7 +111,7 @@ sysctl_kbdremap_rules(SYSCTL_HANDLER_ARGS)
 		to_str = pair;
 		
 		if (from_str == NULL || to_str == NULL) {
-			printf("kbdremap: invalid rule format (expected 0xFROM:0xTO)\n");
+			printf("kbdremap: invalid rule format\n");
 			continue;
 		}
 		
@@ -134,7 +119,7 @@ sysctl_kbdremap_rules(SYSCTL_HANDLER_ARGS)
 		to = strtoul(to_str, NULL, 0);
 		
 		if (from > 0xFF || to > 0xFF) {
-			printf("kbdremap: invalid usage code: 0x%lx:0x%lx (must be 0x00-0xFF)\n",
+			printf("kbdremap: out of range: 0x%lx:0x%lx (must be 0x00-0xFF)\n",
 			    from, to);
 			continue;
 		}
@@ -144,7 +129,7 @@ sysctl_kbdremap_rules(SYSCTL_HANDLER_ARGS)
 		new_count++;
 	}
 	
-	/* Apply new rules atomically */
+	/* apply new rules atomically */
 	mtx_lock(&kbdremap_state.mtx);
 	memcpy(kbdremap_state.rules, new_rules,
 	    sizeof(struct kbdremap_rule) * new_count);
@@ -157,28 +142,6 @@ sysctl_kbdremap_rules(SYSCTL_HANDLER_ARGS)
 	return (0);
 }
 
-/*
- * Sysctl to show current translation for a specific key.
- * Useful for debugging: sysctl hw.kbdremap.translate=0x39
- */
-static int
-sysctl_kbdremap_translate(SYSCTL_HANDLER_ARGS)
-{
-	unsigned int input, output;
-	int error;
-
-	input = 0;
-	error = sysctl_handle_int(oidp, &input, 0, req);
-	if (error != 0 || req->newptr == NULL)
-		return (error);
-
-	output = kbdremap_translate(input);
-
-	printf("kbdremap: 0x%02x -> 0x%02x\n", input, output);
-
-	return (0);
-}
-
 /* Sysctl tree */
 SYSCTL_NODE(_hw, OID_AUTO, kbdremap, CTLFLAG_RW | CTLFLAG_MPSAFE, 0,
     "Keyboard remapping");
@@ -187,13 +150,6 @@ SYSCTL_PROC(_hw_kbdremap, OID_AUTO, rules,
     CTLTYPE_STRING | CTLFLAG_RW | CTLFLAG_NEEDGIANT, NULL, 0,
     sysctl_kbdremap_rules, "A", "Remap rules (format: 0xFROM:0xTO,...)");
 
-SYSCTL_PROC(_hw_kbdremap, OID_AUTO, translate,
-    CTLTYPE_UINT | CTLFLAG_RW | CTLFLAG_NEEDGIANT, NULL, 0,
-    sysctl_kbdremap_translate, "IU", "Test translation of a usage code");
-
-/*
- * Module event handler
- */
 static int
 kbdremap_modevent(module_t mod, int type, void *data)
 {
@@ -209,8 +165,6 @@ kbdremap_modevent(module_t mod, int type, void *data)
 			return (error);
 		}
 		printf("kbdremap: keyboard remapping enabled\n");
-		printf(
-		    "kbdremap: configure with: sysctl hw.kbdremap.rules='0xFROM:0xTO,...'\n");
 		break;
 
 	case MOD_UNLOAD:
