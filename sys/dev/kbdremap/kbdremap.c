@@ -103,16 +103,12 @@ kbdremap_translate(uint32_t usage)
 
 	if (usage > 0xFF)
 		return (usage);
-
 	do {
 		seq = atomic_load_acq_int(&kbdremap_state.seq);
-
-		while (seq & 1) /* writer in progress -> wait/retry */
+		while (seq & 1) /* if odd, write in progress */
 			seq = atomic_load_acq_int(&kbdremap_state.seq);
-
 		if (atomic_load_acq_int(&kbdremap_state.count) == 0)
 			return (usage);
-
 		out = kbdremap_state.map[(uint8_t)usage];
 	} while (atomic_load_acq_int(&kbdremap_state.seq) != seq);
 
@@ -147,7 +143,7 @@ sysctl_kbdremap_rules(SYSCTL_HANDLER_ARGS)
 
 	if (sbuf_len(sb) >= sizeof(buf)) {
 		sbuf_delete(sb);
-		return (ENOMEM); /* or truncate + warn */
+		return (ENOMEM);
 	}
 	strlcpy(buf, sbuf_data(sb), sizeof(buf));
 	error = sysctl_handle_string(oidp, buf, sizeof(buf), req);
@@ -214,14 +210,14 @@ sysctl_kbdremap_rules(SYSCTL_HANDLER_ARGS)
 		new_map[new_rules[i].from] = new_rules[i].to;
 
 	mtx_lock(&kbdremap_state.mtx);
-	/* mark write-in-progress (make seq odd) */
+	/* mark odd - write in progress */
 	atomic_add_int(&kbdremap_state.seq, 1);
 	memcpy(kbdremap_state.map, new_map, sizeof(new_map));
 	memcpy(kbdremap_state.rules, new_rules,
 	    sizeof(struct kbdremap_rule) * new_count);
 	/* publish count (release ordering) */
 	atomic_store_rel_int(&kbdremap_state.count, new_count);
-	/* mark write complete (make seq even) */
+	/* mark even - write complete */
 	atomic_add_int(&kbdremap_state.seq, 1);
 	mtx_unlock(&kbdremap_state.mtx);
 
@@ -247,7 +243,6 @@ kbdremap_modevent(module_t mod, int type, void *data)
 
 	switch (type) {
 	case MOD_LOAD:
-		/* initialize identity map and publish count==0 */
 		for (int i = 0; i < 256; i++)
 			kbdremap_state.map[i] = (uint8_t)i;
 		atomic_store_rel_int(&kbdremap_state.seq, 0);
