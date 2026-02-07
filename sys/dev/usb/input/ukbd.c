@@ -853,21 +853,19 @@ ukbd_intr_callback(struct usb_xfer *xfer, usb_error_t error)
 				sc->sc_ndata.bitmap[key / 64] |= 1ULL << (key % 64);
 			}
 		}
+
 		if (hidbus_kbd_remap_hook != NULL) {
 			struct ukbd_data remapped;
 			int j;
 
-			memcpy(&remapped, &sc->sc_ndata, sizeof(remapped));
+			memset(&remapped, 0, sizeof(remapped));
 
 			for (j = 0; j < UKBD_NKEYCODE; j++) {
 				if (sc->sc_ndata.bitmap[j / 64] &
 				    (1ULL << (j % 64))) {
-					uint32_t mapped =
-					    hidbus_kbd_remap_hook((uint32_t)j);
-					if (mapped != (uint32_t)j &&
-					    mapped < UKBD_NKEYCODE) {
-						remapped.bitmap[j / 64] &=
-						    ~(1ULL << (j % 64));
+					uint32_t mapped = hidbus_kbd_remap_hook(
+					    (uint32_t)j);
+					if (mapped < UKBD_NKEYCODE) {
 						remapped.bitmap[mapped / 64] |=
 						    1ULL << (mapped % 64);
 					}
@@ -876,6 +874,7 @@ ukbd_intr_callback(struct usb_xfer *xfer, usb_error_t error)
 
 			memcpy(&sc->sc_ndata, &remapped, sizeof(sc->sc_ndata));
 		}
+
 #ifdef USB_DEBUG
 		DPRINTF("modifiers = 0x%04x\n", modifiers);
 		for (i = 0; i != UKBD_NKEYCODE; i++) {

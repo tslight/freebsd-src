@@ -133,6 +133,8 @@ SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, apple_fn_mode, CTLFLAG_RWTUN,
 #define APPLE_FN_KEY 0xff
 #define APPLE_EJECT_KEY 0xec
 
+extern hidbus_kbd_remap_fn_t hidbus_kbd_remap_hook;
+
 struct hkbd_softc {
 	device_t sc_dev;
 
@@ -781,19 +783,19 @@ hkbd_intr_callback(void *context, void *data, hid_size_t len)
 		bitstr_t bit_decl(remapped, HKBD_NKEYCODE);
 		int j;
 
-		memcpy(remapped, sc->sc_ndata, bitstr_size(HKBD_NKEYCODE));
+		memset(remapped, 0, bitstr_size(HKBD_NKEYCODE));
 
 		bit_foreach(sc->sc_ndata, HKBD_NKEYCODE, j)
 		{
 			uint32_t mapped = hidbus_kbd_remap_hook((uint32_t)j);
-			if (mapped != (uint32_t)j && mapped < HKBD_NKEYCODE) {
-				bit_clear(remapped, j);
+			if (mapped < HKBD_NKEYCODE) {
 				bit_set(remapped, mapped);
 			}
 		}
 
 		memcpy(sc->sc_ndata, remapped, bitstr_size(HKBD_NKEYCODE));
 	}
+
 #ifdef HID_DEBUG
 	DPRINTF("modifiers = 0x%04x\n", modifiers);
 	bit_foreach(sc->sc_ndata, HKBD_NKEYCODE, i)
