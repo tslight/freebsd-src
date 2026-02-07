@@ -6,9 +6,12 @@
  * Remaps HID usage codes for ukbd and hkbd
  */
 
+#include <sys/types.h>
 #include <sys/param.h>
 #include <sys/systm.h>
+#include <sys/ctype.h>
 #include <sys/kernel.h>
+#include <sys/libkern.h>
 #include <sys/lock.h>
 #include <sys/malloc.h>
 #include <sys/module.h>
@@ -33,12 +36,27 @@ struct kbdremap_rule {
 static struct {
 	struct kbdremap_rule rules[KBDREMAP_MAX_RULES];
 	int count;
+	int seq;
+	uint8_t map[256];
 	struct mtx mtx;
 } kbdremap_state;
 
 MTX_SYSINIT(kbdremap_mtx, &kbdremap_state.mtx, "kbdremap", MTX_DEF);
 
-/* parse hex string into a uint8_t. */
+static char *
+kbdremap_trim(char *s)
+{
+	char *e;
+	while (*s && isspace((unsigned char)*s))
+		s++;
+	if (*s == '\0')
+		return (s);
+	e = s + strlen(s) - 1;
+	while (e > s && isspace((unsigned char)*e))
+		*e-- = '\0';
+	return (s);
+}
+
 static int
 kbdremap_parse_hex(const char *s, uint8_t *out)
 {
@@ -48,7 +66,6 @@ kbdremap_parse_hex(const char *s, uint8_t *out)
 	if (s == NULL || *s == '\0')
 		return (-1);
 
-	/* skip optional "0x" or "0X" prefix */
 	if (s[0] == '0' && (s[1] == 'x' || s[1] == 'X'))
 		s += 2;
 
@@ -57,7 +74,7 @@ kbdremap_parse_hex(const char *s, uint8_t *out)
 
 	val = 0;
 	for (i = 0; s[i] != '\0'; i++) {
-		if (i >= 2) /* max 2 hex digits for uint8_t */
+		if (i >= 2)
 			return (-1);
 		val <<= 4;
 		if (s[i] >= '0' && s[i] <= '9')
@@ -81,15 +98,25 @@ kbdremap_parse_hex(const char *s, uint8_t *out)
 static uint32_t
 kbdremap_translate(uint32_t usage)
 {
-	int cnt = atomic_load_acq_int(&kbdremap_state.count);
-	if (cnt == 0 || usage > 0xFF)
+	int seq;
+	uint8_t out;
+
+	if (usage > 0xFF)
 		return (usage);
 
-	for (int i = 0; i < cnt; i++) {
-		if (kbdremap_state.rules[i].from == (uint8_t)usage)
-			return (kbdremap_state.rules[i].to);
-	}
-	return (usage);
+	do {
+		seq = atomic_load_acq_int(&kbdremap_state.seq);
+
+		while (seq & 1) /* writer in progress -> wait/retry */
+			seq = atomic_load_acq_int(&kbdremap_state.seq);
+
+		if (atomic_load_acq_int(&kbdremap_state.count) == 0)
+			return (usage);
+
+		out = kbdremap_state.map[(uint8_t)usage];
+	} while (atomic_load_acq_int(&kbdremap_state.seq) != seq);
+
+	return ((uint32_t)out);
 }
 
 static int
@@ -100,45 +127,56 @@ sysctl_kbdremap_rules(SYSCTL_HANDLER_ARGS)
 	int error, i, new_count;
 	struct kbdremap_rule new_rules[KBDREMAP_MAX_RULES];
 	uint8_t from, to;
+	uint8_t new_map[256];
+	bool seen[256] = { false };
+	bool dup_warn = false;
+	struct sbuf *sb;
 
-	/* build current rules string */
-	buf[0] = '\0';
+	sb = sbuf_new_auto();
+	if (sb == NULL)
+		return (ENOMEM);
 	mtx_lock(&kbdremap_state.mtx);
 	for (i = 0; i < kbdremap_state.count; i++) {
-		char tmp[16];
 		if (i > 0)
-			strlcat(buf, ",", sizeof(buf));
-		snprintf(tmp, sizeof(tmp), "0x%02x:0x%02x",
-		    kbdremap_state.rules[i].from, kbdremap_state.rules[i].to);
-		strlcat(buf, tmp, sizeof(buf));
+			sbuf_putc(sb, ',');
+		sbuf_printf(sb, "0x%02x:0x%02x", kbdremap_state.rules[i].from,
+		    kbdremap_state.rules[i].to);
 	}
 	mtx_unlock(&kbdremap_state.mtx);
+	sbuf_finish(sb);
 
+	if (sbuf_len(sb) >= sizeof(buf)) {
+		sbuf_delete(sb);
+		return (ENOMEM); /* or truncate + warn */
+	}
+	strlcpy(buf, sbuf_data(sb), sizeof(buf));
 	error = sysctl_handle_string(oidp, buf, sizeof(buf), req);
-	if (error != 0 || req->newptr == NULL)
-		return (error);
+	sbuf_delete(sb);
+	if (error != 0)
+		return error;
+	if (req->newptr == NULL)
+		return 0; /* read only */
 
-	/* parse new rules from buf */
 	new_count = 0;
 	p = buf;
 
 	while ((pair = strsep(&p, ",")) != NULL) {
+		char *tp;
 		if (*pair == '\0')
 			continue;
+		tp = kbdremap_trim(pair);
+		if (*tp == '\0')
+			continue;
 
-		if (new_count >= KBDREMAP_MAX_RULES) {
-			printf("kbdremap: too many rules (max %d)\n",
-			    KBDREMAP_MAX_RULES);
-			return (EINVAL);
-		}
-
-		from_str = strsep(&pair, ":");
-		to_str = pair;
-
+		from_str = strsep(&tp, ":");
+		to_str = tp;
 		if (from_str == NULL || to_str == NULL) {
 			printf("kbdremap: invalid rule format\n");
 			return (EINVAL);
 		}
+
+		from_str = kbdremap_trim(from_str);
+		to_str = kbdremap_trim(to_str);
 
 		if (kbdremap_parse_hex(from_str, &from) != 0 ||
 		    kbdremap_parse_hex(to_str, &to) != 0) {
@@ -147,22 +185,48 @@ sysctl_kbdremap_rules(SYSCTL_HANDLER_ARGS)
 			return (EINVAL);
 		}
 
+		if (seen[from]) {
+			for (i = 0; i < new_count; i++) {
+				if (new_rules[i].from == from) {
+					new_rules[i].to = to;
+					break;
+				}
+			}
+			dup_warn = true;
+			continue;
+		}
+
+		if (new_count >= KBDREMAP_MAX_RULES) {
+			printf("kbdremap: too many rules (max %d)\n",
+			    KBDREMAP_MAX_RULES);
+			return (EINVAL);
+		}
+
 		new_rules[new_count].from = from;
 		new_rules[new_count].to = to;
+		seen[from] = true;
 		new_count++;
 	}
 
-	/* apply new rules atomically */
+	for (i = 0; i < 256; i++)
+		new_map[i] = (uint8_t)i;
+	for (i = 0; i < new_count; i++)
+		new_map[new_rules[i].from] = new_rules[i].to;
+
 	mtx_lock(&kbdremap_state.mtx);
-	/* prevent readers from using rules */
-	atomic_store_rel_int(&kbdremap_state.count, 0);
+	/* mark write-in-progress (make seq odd) */
+	atomic_add_int(&kbdremap_state.seq, 1);
+	memcpy(kbdremap_state.map, new_map, sizeof(new_map));
 	memcpy(kbdremap_state.rules, new_rules,
 	    sizeof(struct kbdremap_rule) * new_count);
-	/* publish new rules with release ordering so readers that
-	 * observe count > 0 will also see the fully-copied rules
-	 * array. */
+	/* publish count (release ordering) */
 	atomic_store_rel_int(&kbdremap_state.count, new_count);
+	/* mark write complete (make seq even) */
+	atomic_add_int(&kbdremap_state.seq, 1);
 	mtx_unlock(&kbdremap_state.mtx);
+
+	if (dup_warn)
+		printf("kbdremap: duplicate 'from' entries (last wins)\n");
 
 	printf("kbdremap: loaded %d remap rule%s\n", new_count,
 	    new_count == 1 ? "" : "s");
@@ -183,7 +247,11 @@ kbdremap_modevent(module_t mod, int type, void *data)
 
 	switch (type) {
 	case MOD_LOAD:
-		kbdremap_state.count = 0;
+		/* initialize identity map and publish count==0 */
+		for (int i = 0; i < 256; i++)
+			kbdremap_state.map[i] = (uint8_t)i;
+		atomic_store_rel_int(&kbdremap_state.seq, 0);
+		atomic_store_rel_int(&kbdremap_state.count, 0);
 		error = hidbus_register_kbd_remap_hook(kbdremap_translate);
 		if (error != 0) {
 			printf("kbdremap: failed to register hook: %d\n",
@@ -192,12 +260,10 @@ kbdremap_modevent(module_t mod, int type, void *data)
 		}
 		printf("kbdremap: keyboard remapping enabled\n");
 		break;
-
 	case MOD_UNLOAD:
 		hidbus_unregister_kbd_remap_hook(kbdremap_translate);
 		printf("kbdremap: keyboard remapping disabled\n");
 		break;
-
 	default:
 		error = EOPNOTSUPP;
 		break;
