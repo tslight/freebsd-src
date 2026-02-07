@@ -132,6 +132,8 @@ SYSCTL_INT(_hw_usb_ukbd, OID_AUTO, apple_fn_mode, CTLFLAG_RWTUN,
 #define APPLE_FN_KEY 0xff
 #define APPLE_EJECT_KEY 0xec
 
+extern hidbus_kbd_remap_fn_t hidbus_kbd_remap_hook;
+
 struct ukbd_data {
 	uint64_t bitmap[howmany(UKBD_NKEYCODE, 64)];
 };
@@ -816,10 +818,8 @@ ukbd_intr_callback(struct usb_xfer *xfer, usb_error_t error)
 				if (tmp_loc.count > UKBD_NKEYCODE)
 					tmp_loc.count = UKBD_NKEYCODE;
 				while (tmp_loc.count--) {
-					uint32_t key = hid_get_udata_kbd(
+					uint32_t key = hid_get_udata(
 					    sc->sc_buffer, len, &tmp_loc);
-					/* uint32_t key = hid_get_udata( */
-					/*     sc->sc_buffer, len, &tmp_loc); */
 					/* advance to next location */
 					tmp_loc.pos += tmp_loc.size;
 					if (key == KEY_ERROR) {
@@ -852,6 +852,29 @@ ukbd_intr_callback(struct usb_xfer *xfer, usb_error_t error)
 				/* set key in bitmap */
 				sc->sc_ndata.bitmap[key / 64] |= 1ULL << (key % 64);
 			}
+		}
+		if (hidbus_kbd_remap_hook != NULL) {
+			struct ukbd_data remapped;
+			int j;
+
+			memcpy(&remapped, &sc->sc_ndata, sizeof(remapped));
+
+			for (j = 0; j < UKBD_NKEYCODE; j++) {
+				if (sc->sc_ndata.bitmap[j / 64] &
+				    (1ULL << (j % 64))) {
+					uint32_t mapped =
+					    hidbus_kbd_remap_hook((uint32_t)j);
+					if (mapped != (uint32_t)j &&
+					    mapped < UKBD_NKEYCODE) {
+						remapped.bitmap[j / 64] &=
+						    ~(1ULL << (j % 64));
+						remapped.bitmap[mapped / 64] |=
+						    1ULL << (mapped % 64);
+					}
+				}
+			}
+
+			memcpy(&sc->sc_ndata, &remapped, sizeof(sc->sc_ndata));
 		}
 #ifdef USB_DEBUG
 		DPRINTF("modifiers = 0x%04x\n", modifiers);

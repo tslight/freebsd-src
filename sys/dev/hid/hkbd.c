@@ -737,10 +737,8 @@ hkbd_intr_callback(void *context, void *data, hid_size_t len)
 			if (tmp_loc.count > HKBD_NKEYCODE)
 				tmp_loc.count = HKBD_NKEYCODE;
 			while (tmp_loc.count--) {
-				/* uint32_t key = */
-				/*     hid_get_udata(buf, len, &tmp_loc); */
-				uint32_t key = hid_get_udata_kbd(buf, len,
-				    &tmp_loc);
+				uint32_t key =
+				    hid_get_udata(buf, len, &tmp_loc);
 				/* advance to next location */
 				tmp_loc.pos += tmp_loc.size;
 				if (key == KEY_ERROR) {
@@ -777,6 +775,24 @@ hkbd_intr_callback(void *context, void *data, hid_size_t len)
 			/* set key in bitmap */
 			bit_set(sc->sc_ndata, key);
 		}
+	}
+
+	if (hidbus_kbd_remap_hook != NULL) {
+		bitstr_t bit_decl(remapped, HKBD_NKEYCODE);
+		int j;
+
+		memcpy(remapped, sc->sc_ndata, bitstr_size(HKBD_NKEYCODE));
+
+		bit_foreach(sc->sc_ndata, HKBD_NKEYCODE, j)
+		{
+			uint32_t mapped = hidbus_kbd_remap_hook((uint32_t)j);
+			if (mapped != (uint32_t)j && mapped < HKBD_NKEYCODE) {
+				bit_clear(remapped, j);
+				bit_set(remapped, mapped);
+			}
+		}
+
+		memcpy(sc->sc_ndata, remapped, bitstr_size(HKBD_NKEYCODE));
 	}
 #ifdef HID_DEBUG
 	DPRINTF("modifiers = 0x%04x\n", modifiers);
