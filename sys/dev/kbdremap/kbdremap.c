@@ -16,6 +16,8 @@
 #include <sys/sbuf.h>
 #include <sys/sysctl.h>
 
+#include <machine/atomic.h>
+
 /* avoid including complex hidbus.h macros */
 typedef uint32_t (*hidbus_kbd_remap_fn_t)(uint32_t);
 int hidbus_register_kbd_remap_hook(hidbus_kbd_remap_fn_t fn);
@@ -79,17 +81,14 @@ kbdremap_parse_hex(const char *s, uint8_t *out)
 static uint32_t
 kbdremap_translate(uint32_t usage)
 {
-	if (kbdremap_state.count == 0)
+	int cnt = atomic_load_acq_int(&kbdremap_state.count);
+	if (cnt == 0 || usage > 0xFF)
 		return (usage);
 
-	if (usage > 0xFF)
-		return (usage);
-
-	for (int i = 0; i < kbdremap_state.count; i++) {
+	for (int i = 0; i < cnt; i++) {
 		if (kbdremap_state.rules[i].from == (uint8_t)usage)
 			return (kbdremap_state.rules[i].to);
 	}
-
 	return (usage);
 }
 
@@ -155,10 +154,14 @@ sysctl_kbdremap_rules(SYSCTL_HANDLER_ARGS)
 
 	/* apply new rules atomically */
 	mtx_lock(&kbdremap_state.mtx);
-	kbdremap_state.count = 0;
+	/* prevent readers from using rules */
+	atomic_store_rel_int(&kbdremap_state.count, 0);
 	memcpy(kbdremap_state.rules, new_rules,
 	    sizeof(struct kbdremap_rule) * new_count);
-	kbdremap_state.count = new_count;
+	/* publish new rules with release ordering so readers that
+	 * observe count > 0 will also see the fully-copied rules
+	 * array. */
+	atomic_store_rel_int(&kbdremap_state.count, new_count);
 	mtx_unlock(&kbdremap_state.mtx);
 
 	printf("kbdremap: loaded %d remap rule%s\n", new_count,
@@ -170,8 +173,7 @@ sysctl_kbdremap_rules(SYSCTL_HANDLER_ARGS)
 SYSCTL_NODE(_hw, OID_AUTO, kbdremap, CTLFLAG_RW | CTLFLAG_MPSAFE, 0,
     "Keyboard remapping");
 
-SYSCTL_PROC(_hw_kbdremap, OID_AUTO, rules,
-    CTLTYPE_STRING | CTLFLAG_RW | CTLFLAG_NEEDGIANT, NULL, 0,
+SYSCTL_PROC(_hw_kbdremap, OID_AUTO, rules, CTLTYPE_STRING | CTLFLAG_RW, NULL, 0,
     sysctl_kbdremap_rules, "A", "Remap rules (format: 0xFROM:0xTO,...)");
 
 static int
