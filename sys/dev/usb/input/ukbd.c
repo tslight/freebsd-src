@@ -133,8 +133,6 @@ SYSCTL_INT(_hw_usb_ukbd, OID_AUTO, apple_fn_mode, CTLFLAG_RWTUN,
 #define APPLE_FN_KEY 0xff
 #define APPLE_EJECT_KEY 0xec
 
-extern hidbus_kbd_remap_fn_t hidbus_kbd_remap_hook;
-
 struct ukbd_data {
 	uint64_t bitmap[howmany(UKBD_NKEYCODE, 64)];
 };
