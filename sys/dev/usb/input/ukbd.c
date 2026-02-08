@@ -680,8 +680,8 @@ static uint32_t
 ukbd_apple_fn(uint32_t keycode)
 {
 	switch (keycode) {
-	case 0x14: return 0x47;	/* K -> SCROLLLOCK (mirror ThinkPad/Latitudes) */
-	case 0x19: return 0x46;	/* P -> SYSRQ/PRTSC */
+	case 0x0e: return 0x47;	/* K -> SCROLLLOCK (mirror ThinkPad/Latitudes) */
+	case 0x13: return 0x46;	/* P -> SYSRQ/PRTSC */
 	case 0x28: return 0x49; /* RETURN -> INSERT */
 	case 0x2a: return 0x4c; /* BACKSPACE -> DEL */
 	case 0x50: return 0x4a; /* LEFT ARROW -> HOME */
