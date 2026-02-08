@@ -133,8 +133,6 @@ SYSCTL_INT(_hw_hid_hkbd, OID_AUTO, apple_fn_mode, CTLFLAG_RWTUN,
 #define APPLE_FN_KEY 0xff
 #define APPLE_EJECT_KEY 0xec
 
-extern hidbus_kbd_remap_fn_t hidbus_kbd_remap_hook;
-
 struct hkbd_softc {
 	device_t sc_dev;
 
@@ -779,41 +777,32 @@ hkbd_intr_callback(void *context, void *data, hid_size_t len)
 		}
 	}
 
-	/* safely load the hook pointer to prevent races during module
-	 * unload. The hook returns a 256-byte mapping table. */
-	hidbus_kbd_remap_fn_t hook = (hidbus_kbd_remap_fn_t)atomic_load_acq_ptr(
-	    (volatile void *)&hidbus_kbd_remap_hook);
+	const uint8_t *map = hidbus_kbd_get_map();
 
-	if (hook != NULL) {
+	if (map != NULL) {
 		bitstr_t bit_decl(remapped, HKBD_NKEYCODE);
 		bitstr_t bit_decl(remapped0, HKBD_NKEYCODE);
-		const uint8_t *map;
 		int j;
 
-		map = hook();
-		if (map != NULL) {
-			memset(remapped, 0, bitstr_size(HKBD_NKEYCODE));
-			memset(remapped0, 0, bitstr_size(HKBD_NKEYCODE));
+		memset(remapped, 0, bitstr_size(HKBD_NKEYCODE));
+		memset(remapped0, 0, bitstr_size(HKBD_NKEYCODE));
 
-			bit_foreach(sc->sc_ndata, HKBD_NKEYCODE, j)
-			{
-				uint8_t mapped = map[j];
-				bit_set(remapped, mapped);
-				if (j >= 0xe0 && mapped < 0xe0)
-					bit_set(remapped0, mapped);
-			}
-
-			bit_foreach(sc->sc_ndata0, HKBD_NKEYCODE, j)
-			{
-				uint8_t mapped = map[j];
+		bit_foreach(sc->sc_ndata, HKBD_NKEYCODE, j)
+		{
+			uint8_t mapped = map[j];
+			bit_set(remapped, mapped);
+			if (j >= 0xe0 && mapped < 0xe0)
 				bit_set(remapped0, mapped);
-			}
-
-			memcpy(sc->sc_ndata, remapped,
-			    bitstr_size(HKBD_NKEYCODE));
-			memcpy(sc->sc_ndata0, remapped0,
-			    bitstr_size(HKBD_NKEYCODE));
 		}
+
+		bit_foreach(sc->sc_ndata0, HKBD_NKEYCODE, j)
+		{
+			uint8_t mapped = map[j];
+			bit_set(remapped0, mapped);
+		}
+
+		memcpy(sc->sc_ndata, remapped, bitstr_size(HKBD_NKEYCODE));
+		memcpy(sc->sc_ndata0, remapped0, bitstr_size(HKBD_NKEYCODE));
 	}
 #ifdef HID_DEBUG
 	DPRINTF("modifiers = 0x%04x\n", modifiers);

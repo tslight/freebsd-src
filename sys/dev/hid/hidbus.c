@@ -51,8 +51,13 @@
 #define	INPUT_EPOCH	global_epoch_preempt
 #define	HID_RSIZE_MAX	1024
 
-/* Keyboard remapping infrastructure */
-hidbus_kbd_remap_fn_t hidbus_kbd_remap_hook = NULL;
+/* keyboard remapping infrastructure */
+#include <machine/atomic.h>
+/* store hook as an integer-width token (uintptr_t). 0 == no hook.
+ * conversions to/from function pointers at the API boundary. */
+static volatile uintptr_t hidbus_kbd_remap_hook_ptr = 0;
+/* number of callers currently executing the hook */
+static volatile int hidbus_kbd_remap_inflight = 0;
 static struct mtx hidbus_remap_mtx;
 MTX_SYSINIT(hidbus_remap, &hidbus_remap_mtx, "hidbus remap", MTX_DEF);
 
@@ -65,26 +70,64 @@ hidbus_register_kbd_remap_hook(hidbus_kbd_remap_fn_t fn)
 		return (EINVAL);
 
 	mtx_lock(&hidbus_remap_mtx);
-	if (hidbus_kbd_remap_hook != NULL) {
+	if (hidbus_kbd_remap_hook_ptr != 0) {
 		error = EBUSY;
 	} else {
-		hidbus_kbd_remap_hook = fn;
-		atomic_thread_fence_rel();
+		/* publish hook token using integer atomic store */
+		atomic_store_rel_long(
+		    (volatile u_long *)&hidbus_kbd_remap_hook_ptr,
+		    (u_long)(uintptr_t)fn);
 	}
 	mtx_unlock(&hidbus_remap_mtx);
-	
+
 	return (error);
 }
 
 void
 hidbus_unregister_kbd_remap_hook(hidbus_kbd_remap_fn_t fn)
 {
+	/* clear hook pointer so new readers won't see it. */
 	mtx_lock(&hidbus_remap_mtx);
-	if (hidbus_kbd_remap_hook == fn) {
-		hidbus_kbd_remap_hook = NULL;
-		atomic_thread_fence_rel();
+	/* compare stored token with provided function pointer */
+	if ((hidbus_kbd_remap_fn_t)(uintptr_t)atomic_load_acq_long(
+		(volatile u_long *)&hidbus_kbd_remap_hook_ptr) == fn) {
+		atomic_store_rel_long(
+		    (volatile u_long *)&hidbus_kbd_remap_hook_ptr, (u_long)0);
 	}
 	mtx_unlock(&hidbus_remap_mtx);
+	/* wait for in-flight readers to finish */
+	while (atomic_load_acq_int(&hidbus_kbd_remap_inflight) != 0)
+		pause("hidbus_remap_wait", hz / 10);
+}
+
+/* increments an inflight counter while invoking the hook: allows
+ * unregister to wait for active callers to complete. */
+const uint8_t *
+hidbus_kbd_get_map(void)
+{
+	hidbus_kbd_remap_fn_t hook;
+	const uint8_t *map = NULL;
+	u_long v;
+
+	/* increment inflight FIRST to prevent unload during our read */
+	atomic_add_acq_int(&hidbus_kbd_remap_inflight, 1);
+
+	/* acquire token & convert to function-pointer */
+	v = atomic_load_acq_long((volatile u_long *)&hidbus_kbd_remap_hook_ptr);
+
+	if (v == 0) {
+		/* no hook registered - decrement and return */
+		atomic_subtract_rel_int(&hidbus_kbd_remap_inflight, 1);
+		return (NULL);
+	}
+
+	hook = (hidbus_kbd_remap_fn_t)(uintptr_t)v;
+	map = hook();
+
+	/* decrement with release semantics - publish that we're done */
+	atomic_subtract_rel_int(&hidbus_kbd_remap_inflight, 1);
+
+	return (map);
 }
 
 static hid_intr_t	hidbus_intr;

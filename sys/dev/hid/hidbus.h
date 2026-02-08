@@ -26,8 +26,25 @@
 #ifndef _HID_HIDBUS_H_
 #define _HID_HIDBUS_H_
 
+#include <dev/hid/hid.h> /* for hidbus_kbd_remap_fn_t */
+/*
+ * Keyboard remapping hook API:
+ *
+ * Register a hook function with hidbus_register_kbd_remap_hook().
+ *
+ * The hook must be callable from interrupt context and must return a
+ * pointer to a 256-byte mapping table.
+ *
+ * A NULL return means no map.
+ *
+ * The hook pointer is published with release semantics; callers must
+ * use hidbus_kbd_get_map() to obtain the current map
+ *
+ * Unregister waits for in-flight readers to finish before returning.
+ */
 int hidbus_register_kbd_remap_hook(hidbus_kbd_remap_fn_t fn);
 void hidbus_unregister_kbd_remap_hook(hidbus_kbd_remap_fn_t fn);
+const uint8_t *hidbus_kbd_get_map(void);
 
 enum {
 	HIDBUS_IVAR_USAGE,

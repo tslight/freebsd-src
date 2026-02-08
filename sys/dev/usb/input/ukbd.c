@@ -60,6 +60,7 @@
 #include <sys/proc.h>
 
 #include <dev/hid/hid.h>
+#include <dev/hid/hidbus.h>
 
 #include <dev/usb/usb.h>
 #include <dev/usb/usbdi.h>
@@ -854,34 +855,24 @@ ukbd_intr_callback(struct usb_xfer *xfer, usb_error_t error)
 			}
 		}
 
-		/* safely load the hook pointer to prevent races during
-		 * module unload. hook returns a 256-byte mapping table. */
-		hidbus_kbd_remap_fn_t hook = (hidbus_kbd_remap_fn_t)
-		    atomic_load_acq_ptr(
-			(volatile void *)&hidbus_kbd_remap_hook);
+		const uint8_t *map = hidbus_kbd_get_map();
 
-		if (hook != NULL) {
+		if (map != NULL) {
 			struct ukbd_data remapped;
-			const uint8_t *map;
 			int j;
-			map = hook();
-			if (map != NULL) {
-				memset(&remapped, 0, sizeof(remapped));
+			memset(&remapped, 0, sizeof(remapped));
 
-				for (j = 0; j < UKBD_NKEYCODE; j++) {
-					if (sc->sc_ndata.bitmap[j / 64] &
-					    (1ULL << (j % 64))) {
-						uint8_t mapped = map[j];
-						remapped.bitmap[mapped / 64] |=
-						    1ULL << (mapped % 64);
-					}
+			for (j = 0; j < UKBD_NKEYCODE; j++) {
+				if (sc->sc_ndata.bitmap[j / 64] &
+				    (1ULL << (j % 64))) {
+					uint8_t mapped = map[j];
+					remapped.bitmap[mapped / 64] |= 1ULL
+					    << (mapped % 64);
 				}
-
-				memcpy(&sc->sc_ndata, &remapped,
-				    sizeof(sc->sc_ndata));
 			}
-		}
 
+			memcpy(&sc->sc_ndata, &remapped, sizeof(sc->sc_ndata));
+		}
 #ifdef USB_DEBUG
 		DPRINTF("modifiers = 0x%04x\n", modifiers);
 		for (i = 0; i != UKBD_NKEYCODE; i++) {

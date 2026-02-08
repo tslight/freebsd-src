@@ -38,7 +38,7 @@ static struct {
 	struct kbdremap_rule rules[KBDREMAP_MAX_RULES];
 	int count;
 	uint8_t map[256];
-	uint8_t *active_map;
+	volatile uintptr_t active_map_ptr;
 	struct mtx mtx;
 } kbdremap_state;
 
@@ -95,11 +95,15 @@ kbdremap_parse_hex(const char *s, uint8_t *out)
 	return (0);
 }
 
-/* pointer to active map, called from interrupt context, lock-free */
 static const uint8_t *
 kbdremap_get_map(void)
 {
-	return ((const uint8_t *)atomic_load_ptr(&kbdremap_state.active_map));
+	u_long v;
+	v = atomic_load_acq_long(
+	    (volatile u_long *)&kbdremap_state.active_map_ptr);
+	if (v == 0)
+		return (NULL);
+	return ((const uint8_t *)(uintptr_t)v);
 }
 
 static int
@@ -210,9 +214,10 @@ sysctl_kbdremap_rules(SYSCTL_HANDLER_ARGS)
 	memcpy(kbdremap_state.rules, new_rules,
 	    sizeof(struct kbdremap_rule) * new_count);
 	kbdremap_state.count = new_count;
-	/* publish active map pointer (or NULL if no rules) */
-	kbdremap_state.active_map = has_rules ? kbdremap_state.map : NULL;
-	atomic_thread_fence_rel();
+	/* publish active map token (or 0 if no rules) using integer atomic
+	 * store */
+	atomic_store_rel_long((volatile u_long *)&kbdremap_state.active_map_ptr,
+	    (u_long)(uintptr_t)(has_rules ? kbdremap_state.map : NULL));
 	mtx_unlock(&kbdremap_state.mtx);
 
 	if (dup_warn)
@@ -239,9 +244,12 @@ kbdremap_modevent(module_t mod, int type, void *data)
 	case MOD_LOAD:
 		for (int i = 0; i < 256; i++)
 			kbdremap_state.map[i] = (uint8_t)i;
+
 		kbdremap_state.count = 0;
-		kbdremap_state.active_map = NULL;
-		atomic_thread_fence_rel();
+		atomic_store_rel_long(
+		    (volatile u_long *)&kbdremap_state.active_map_ptr,
+		    (u_long)0);
+
 		error = hidbus_register_kbd_remap_hook(kbdremap_get_map);
 		if (error != 0) {
 			printf("kbdremap: failed to register hook: %d\n",
@@ -251,11 +259,8 @@ kbdremap_modevent(module_t mod, int type, void *data)
 		printf("kbdremap: keyboard remapping enabled\n");
 		break;
 	case MOD_UNLOAD:
+		/* waits for in-flight callers to finish */
 		hidbus_unregister_kbd_remap_hook(kbdremap_get_map);
-		/* give interrupt handlers time to finish using the hook */
-		mtx_lock(&kbdremap_state.mtx);
-		mtx_unlock(&kbdremap_state.mtx);
-		pause("kbdremap_unload", hz / 10);
 		printf("kbdremap: keyboard remapping disabled\n");
 		break;
 	default:
