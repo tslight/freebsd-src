@@ -20,9 +20,10 @@
 #include <sys/sysctl.h>
 
 #include <machine/atomic.h>
+#include <machine/cpu.h>
 
 /* avoid including complex hidbus.h macros */
-typedef uint32_t (*hidbus_kbd_remap_fn_t)(uint32_t);
+typedef const uint8_t *(*hidbus_kbd_remap_fn_t)(void);
 int hidbus_register_kbd_remap_hook(hidbus_kbd_remap_fn_t fn);
 void hidbus_unregister_kbd_remap_hook(hidbus_kbd_remap_fn_t fn);
 
@@ -36,8 +37,8 @@ struct kbdremap_rule {
 static struct {
 	struct kbdremap_rule rules[KBDREMAP_MAX_RULES];
 	int count;
-	int seq;
 	uint8_t map[256];
+	uint8_t *active_map;
 	struct mtx mtx;
 } kbdremap_state;
 
@@ -94,25 +95,11 @@ kbdremap_parse_hex(const char *s, uint8_t *out)
 	return (0);
 }
 
-/* translate HID keyboard usage codes */
-static uint32_t
-kbdremap_translate(uint32_t usage)
+/* pointer to active map, called from interrupt context, lock-free */
+static const uint8_t *
+kbdremap_get_map(void)
 {
-	int seq;
-	uint8_t out;
-
-	if (usage > 0xFF)
-		return (usage);
-	do {
-		seq = atomic_load_acq_int(&kbdremap_state.seq);
-		while (seq & 1) /* if odd, write in progress */
-			seq = atomic_load_acq_int(&kbdremap_state.seq);
-		if (atomic_load_acq_int(&kbdremap_state.count) == 0)
-			return (usage);
-		out = kbdremap_state.map[(uint8_t)usage];
-	} while (atomic_load_acq_int(&kbdremap_state.seq) != seq);
-
-	return ((uint32_t)out);
+	return ((const uint8_t *)atomic_load_ptr(&kbdremap_state.active_map));
 }
 
 static int
@@ -124,6 +111,7 @@ sysctl_kbdremap_rules(SYSCTL_HANDLER_ARGS)
 	struct kbdremap_rule new_rules[KBDREMAP_MAX_RULES];
 	uint8_t from, to;
 	uint8_t new_map[256];
+	bool has_rules;
 	bool seen[256] = { false };
 	bool dup_warn = false;
 	struct sbuf *sb;
@@ -149,76 +137,82 @@ sysctl_kbdremap_rules(SYSCTL_HANDLER_ARGS)
 	error = sysctl_handle_string(oidp, buf, sizeof(buf), req);
 	sbuf_delete(sb);
 	if (error != 0)
-		return error;
+		return (error);
 	if (req->newptr == NULL)
 		return 0; /* read only */
 
 	new_count = 0;
-	p = buf;
 
-	while ((pair = strsep(&p, ",")) != NULL) {
-		char *tp;
-		if (*pair == '\0')
-			continue;
-		tp = kbdremap_trim(pair);
-		if (*tp == '\0')
-			continue;
+	p = kbdremap_trim(buf);
+	if (*p != '\0') { /* if empty jump to clearing */
+		p = buf;
+		while ((pair = strsep(&p, ",")) != NULL) {
+			char *tp;
+			if (*pair == '\0')
+				continue;
+			tp = kbdremap_trim(pair);
+			if (*tp == '\0')
+				continue;
 
-		from_str = strsep(&tp, ":");
-		to_str = tp;
-		if (from_str == NULL || to_str == NULL) {
-			printf("kbdremap: invalid rule format\n");
-			return (EINVAL);
-		}
-
-		from_str = kbdremap_trim(from_str);
-		to_str = kbdremap_trim(to_str);
-
-		if (kbdremap_parse_hex(from_str, &from) != 0 ||
-		    kbdremap_parse_hex(to_str, &to) != 0) {
-			printf("kbdremap: invalid hex value in '%s:%s'\n",
-			    from_str, to_str != NULL ? to_str : "");
-			return (EINVAL);
-		}
-
-		if (seen[from]) {
-			for (i = 0; i < new_count; i++) {
-				if (new_rules[i].from == from) {
-					new_rules[i].to = to;
-					break;
-				}
+			from_str = strsep(&tp, ":");
+			to_str = tp;
+			if (from_str == NULL || to_str == NULL) {
+				printf("kbdremap: invalid rule format\n");
+				return (EINVAL);
 			}
-			dup_warn = true;
-			continue;
-		}
 
-		if (new_count >= KBDREMAP_MAX_RULES) {
-			printf("kbdremap: too many rules (max %d)\n",
-			    KBDREMAP_MAX_RULES);
-			return (EINVAL);
-		}
+			from_str = kbdremap_trim(from_str);
+			to_str = kbdremap_trim(to_str);
 
-		new_rules[new_count].from = from;
-		new_rules[new_count].to = to;
-		seen[from] = true;
-		new_count++;
+			if (kbdremap_parse_hex(from_str, &from) != 0 ||
+			    kbdremap_parse_hex(to_str, &to) != 0) {
+				printf(
+				    "kbdremap: invalid hex value in '%s:%s'\n",
+				    from_str, to_str != NULL ? to_str : "");
+				return (EINVAL);
+			}
+
+			if (seen[from]) {
+				for (i = 0; i < new_count; i++) {
+					if (new_rules[i].from == from) {
+						new_rules[i].to = to;
+						break;
+					}
+				}
+				dup_warn = true;
+				continue;
+			}
+
+			if (new_count >= KBDREMAP_MAX_RULES) {
+				printf("kbdremap: too many rules (max %d)\n",
+				    KBDREMAP_MAX_RULES);
+				return (EINVAL);
+			}
+
+			new_rules[new_count].from = from;
+			new_rules[new_count].to = to;
+			seen[from] = true;
+			new_count++;
+		}
 	}
 
+	/* build map and apply rules */
 	for (i = 0; i < 256; i++)
 		new_map[i] = (uint8_t)i;
 	for (i = 0; i < new_count; i++)
 		new_map[new_rules[i].from] = new_rules[i].to;
 
+	has_rules = (new_count > 0);
+
 	mtx_lock(&kbdremap_state.mtx);
-	/* mark odd - write in progress */
-	atomic_add_int(&kbdremap_state.seq, 1);
+	/* update map and rules atomically */
 	memcpy(kbdremap_state.map, new_map, sizeof(new_map));
 	memcpy(kbdremap_state.rules, new_rules,
 	    sizeof(struct kbdremap_rule) * new_count);
-	/* publish count (release ordering) */
-	atomic_store_rel_int(&kbdremap_state.count, new_count);
-	/* mark even - write complete */
-	atomic_add_int(&kbdremap_state.seq, 1);
+	kbdremap_state.count = new_count;
+	/* publish active map pointer (or NULL if no rules) */
+	kbdremap_state.active_map = has_rules ? kbdremap_state.map : NULL;
+	atomic_thread_fence_rel();
 	mtx_unlock(&kbdremap_state.mtx);
 
 	if (dup_warn)
@@ -245,9 +239,10 @@ kbdremap_modevent(module_t mod, int type, void *data)
 	case MOD_LOAD:
 		for (int i = 0; i < 256; i++)
 			kbdremap_state.map[i] = (uint8_t)i;
-		atomic_store_rel_int(&kbdremap_state.seq, 0);
-		atomic_store_rel_int(&kbdremap_state.count, 0);
-		error = hidbus_register_kbd_remap_hook(kbdremap_translate);
+		kbdremap_state.count = 0;
+		kbdremap_state.active_map = NULL;
+		atomic_thread_fence_rel();
+		error = hidbus_register_kbd_remap_hook(kbdremap_get_map);
 		if (error != 0) {
 			printf("kbdremap: failed to register hook: %d\n",
 			    error);
@@ -256,7 +251,11 @@ kbdremap_modevent(module_t mod, int type, void *data)
 		printf("kbdremap: keyboard remapping enabled\n");
 		break;
 	case MOD_UNLOAD:
-		hidbus_unregister_kbd_remap_hook(kbdremap_translate);
+		hidbus_unregister_kbd_remap_hook(kbdremap_get_map);
+		/* give interrupt handlers time to finish using the hook */
+		mtx_lock(&kbdremap_state.mtx);
+		mtx_unlock(&kbdremap_state.mtx);
+		pause("kbdremap_unload", hz / 10);
 		printf("kbdremap: keyboard remapping disabled\n");
 		break;
 	default:

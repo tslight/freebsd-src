@@ -60,12 +60,16 @@ int
 hidbus_register_kbd_remap_hook(hidbus_kbd_remap_fn_t fn)
 {
 	int error = 0;
-	
+
+	if (fn == NULL)
+		return (EINVAL);
+
 	mtx_lock(&hidbus_remap_mtx);
 	if (hidbus_kbd_remap_hook != NULL) {
 		error = EBUSY;
 	} else {
 		hidbus_kbd_remap_hook = fn;
+		atomic_thread_fence_rel();
 	}
 	mtx_unlock(&hidbus_remap_mtx);
 	
@@ -76,8 +80,10 @@ void
 hidbus_unregister_kbd_remap_hook(hidbus_kbd_remap_fn_t fn)
 {
 	mtx_lock(&hidbus_remap_mtx);
-	if (hidbus_kbd_remap_hook == fn)
+	if (hidbus_kbd_remap_hook == fn) {
 		hidbus_kbd_remap_hook = NULL;
+		atomic_thread_fence_rel();
+	}
 	mtx_unlock(&hidbus_remap_mtx);
 }
 

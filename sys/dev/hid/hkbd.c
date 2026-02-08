@@ -779,39 +779,42 @@ hkbd_intr_callback(void *context, void *data, hid_size_t len)
 		}
 	}
 
-	if (hidbus_kbd_remap_hook != NULL) {
+	/* safely load the hook pointer to prevent races during module
+	 * unload. The hook returns a 256-byte mapping table. */
+	hidbus_kbd_remap_fn_t hook = (hidbus_kbd_remap_fn_t)atomic_load_acq_ptr(
+	    (volatile void *)&hidbus_kbd_remap_hook);
+
+	if (hook != NULL) {
 		bitstr_t bit_decl(remapped, HKBD_NKEYCODE);
 		bitstr_t bit_decl(remapped0, HKBD_NKEYCODE);
+		const uint8_t *map;
 		int j;
 
-		memset(remapped, 0, bitstr_size(HKBD_NKEYCODE));
-		memset(remapped0, 0, bitstr_size(HKBD_NKEYCODE));
+		map = hook();
+		if (map != NULL) {
+			memset(remapped, 0, bitstr_size(HKBD_NKEYCODE));
+			memset(remapped0, 0, bitstr_size(HKBD_NKEYCODE));
 
-		bit_foreach(sc->sc_ndata, HKBD_NKEYCODE, j)
-		{
-			uint32_t mapped = hidbus_kbd_remap_hook((uint32_t)j);
-			if (mapped < HKBD_NKEYCODE) {
+			bit_foreach(sc->sc_ndata, HKBD_NKEYCODE, j)
+			{
+				uint8_t mapped = map[j];
 				bit_set(remapped, mapped);
-				/* track bitmap->array in * ndata0 */
-				if (j >= 0xe0 && j <= 0xff && mapped < 0xe0) {
+				if (j >= 0xe0 && mapped < 0xe0)
 					bit_set(remapped0, mapped);
-				}
 			}
-		}
 
-		/* preserve array keys */
-		bit_foreach(sc->sc_ndata0, HKBD_NKEYCODE, j)
-		{
-			uint32_t mapped = hidbus_kbd_remap_hook((uint32_t)j);
-			if (mapped < HKBD_NKEYCODE) {
+			bit_foreach(sc->sc_ndata0, HKBD_NKEYCODE, j)
+			{
+				uint8_t mapped = map[j];
 				bit_set(remapped0, mapped);
 			}
+
+			memcpy(sc->sc_ndata, remapped,
+			    bitstr_size(HKBD_NKEYCODE));
+			memcpy(sc->sc_ndata0, remapped0,
+			    bitstr_size(HKBD_NKEYCODE));
 		}
-
-		memcpy(sc->sc_ndata, remapped, bitstr_size(HKBD_NKEYCODE));
-		memcpy(sc->sc_ndata0, remapped0, bitstr_size(HKBD_NKEYCODE));
 	}
-
 #ifdef HID_DEBUG
 	DPRINTF("modifiers = 0x%04x\n", modifiers);
 	bit_foreach(sc->sc_ndata, HKBD_NKEYCODE, i)

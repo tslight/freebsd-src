@@ -309,7 +309,7 @@ typedef void hid_intr_t(void *context, void *data, hid_size_t len);
 typedef bool hid_test_quirk_t(const struct hid_device_info *dev_info,
     uint16_t quirk);
 
-typedef uint32_t (*hidbus_kbd_remap_fn_t)(uint32_t);
+typedef const uint8_t *(*hidbus_kbd_remap_fn_t)(void);
 
 extern hid_test_quirk_t *hid_test_quirk_p;
 
