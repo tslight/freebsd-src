@@ -118,19 +118,26 @@ sysctl_kbdremap_rules(SYSCTL_HANDLER_ARGS)
 	bool has_rules;
 	bool seen[256] = { false };
 	bool dup_warn = false;
-	struct sbuf *sb;
 
-	sb = sbuf_new_auto();
+	struct kbdremap_rule rules_copy[KBDREMAP_MAX_RULES];
+	int rules_copy_count;
+
+	mtx_lock(&kbdremap_state.mtx);
+	rules_copy_count = kbdremap_state.count;
+	if (rules_copy_count > 0)
+		memcpy(rules_copy, kbdremap_state.rules,
+		    rules_copy_count * sizeof(struct kbdremap_rule));
+	mtx_unlock(&kbdremap_state.mtx);
+
+	struct sbuf *sb = sbuf_new_auto();
 	if (sb == NULL)
 		return (ENOMEM);
-	mtx_lock(&kbdremap_state.mtx);
-	for (i = 0; i < kbdremap_state.count; i++) {
+	for (i = 0; i < rules_copy_count; i++) {
 		if (i > 0)
 			sbuf_putc(sb, ',');
-		sbuf_printf(sb, "0x%02x:0x%02x", kbdremap_state.rules[i].from,
-		    kbdremap_state.rules[i].to);
+		sbuf_printf(sb, "0x%02x:0x%02x", rules_copy[i].from,
+		    rules_copy[i].to);
 	}
-	mtx_unlock(&kbdremap_state.mtx);
 	sbuf_finish(sb);
 
 	if (sbuf_len(sb) >= sizeof(buf)) {
@@ -140,6 +147,7 @@ sysctl_kbdremap_rules(SYSCTL_HANDLER_ARGS)
 	strlcpy(buf, sbuf_data(sb), sizeof(buf));
 	error = sysctl_handle_string(oidp, buf, sizeof(buf), req);
 	sbuf_delete(sb);
+
 	if (error != 0)
 		return (error);
 	if (req->newptr == NULL)
