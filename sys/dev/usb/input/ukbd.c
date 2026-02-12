@@ -871,12 +871,16 @@ ukbd_intr_callback(struct usb_xfer *xfer, usb_error_t error)
 			memset(&remapped, 0, sizeof(remapped));
 
 			for (j = 0; j < UKBD_NKEYCODE; j++) {
-				if (sc->sc_ndata.bitmap[j / 64] &
-				    (1ULL << (j % 64))) {
-					uint8_t mapped = map[j];
-					remapped.bitmap[mapped / 64] |= 1ULL
-					    << (mapped % 64);
-				}
+				if (!(sc->sc_ndata.bitmap[j / 64] &
+					(1ULL << (j % 64))))
+					continue;
+				if (j >= 256)
+					continue;
+				uint8_t mapped = map[j];
+				if (mapped >= UKBD_NKEYCODE)
+					continue;
+				remapped.bitmap[mapped / 64] |= 1ULL
+				    << (mapped % 64);
 			}
 
 			memcpy(&sc->sc_ndata, &remapped, sizeof(sc->sc_ndata));

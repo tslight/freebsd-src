@@ -799,7 +799,11 @@ hkbd_intr_callback(void *context, void *data, hid_size_t len)
 
 		bit_foreach(sc->sc_ndata, HKBD_NKEYCODE, j)
 		{
+			if (j >= 256)
+				continue;
 			uint8_t mapped = map[j];
+			if (mapped >= HKBD_NKEYCODE)
+				continue;
 			bit_set(remapped, mapped);
 			if (j >= 0xe0 && mapped < 0xe0)
 				bit_set(remapped0, mapped);
@@ -807,7 +811,11 @@ hkbd_intr_callback(void *context, void *data, hid_size_t len)
 
 		bit_foreach(sc->sc_ndata0, HKBD_NKEYCODE, j)
 		{
+			if (j >= 256)
+				continue;
 			uint8_t mapped = map[j];
+			if (mapped >= HKBD_NKEYCODE)
+				continue;
 			bit_set(remapped0, mapped);
 		}
 
