@@ -134,31 +134,46 @@ struct asmc_model {
 
 static const struct asmc_model *asmc_match(device_t dev);
 
-#define ASMC_SMS_FUNCS	asmc_mb_sysctl_sms_x, asmc_mb_sysctl_sms_y, \
-			asmc_mb_sysctl_sms_z
+#define ASMC_SMS_FUNCS						\
+			.smc_sms_x = asmc_mb_sysctl_sms_x,	\
+			.smc_sms_y = asmc_mb_sysctl_sms_y,	\
+			.smc_sms_z = asmc_mb_sysctl_sms_z
 
-#define ASMC_SMS_FUNCS_DISABLED NULL, NULL, NULL
+#define ASMC_SMS_FUNCS_DISABLED			\
+			.smc_sms_x = NULL,	\
+			.smc_sms_y = NULL,	\
+			.smc_sms_z = NULL
 
-#define ASMC_FAN_FUNCS	asmc_mb_sysctl_fanid, asmc_mb_sysctl_fanspeed, asmc_mb_sysctl_fansafespeed, \
-			asmc_mb_sysctl_fanminspeed, \
-			asmc_mb_sysctl_fanmaxspeed, \
-			asmc_mb_sysctl_fantargetspeed
+#define ASMC_FAN_FUNCS	\
+			.smc_fan_id = asmc_mb_sysctl_fanid, \
+			.smc_fan_speed = asmc_mb_sysctl_fanspeed, \
+			.smc_fan_safespeed = asmc_mb_sysctl_fansafespeed, \
+			.smc_fan_minspeed = asmc_mb_sysctl_fanminspeed, \
+			.smc_fan_maxspeed = asmc_mb_sysctl_fanmaxspeed, \
+			.smc_fan_targetspeed = asmc_mb_sysctl_fantargetspeed
 
-#define ASMC_FAN_FUNCS2	asmc_mb_sysctl_fanid, asmc_mb_sysctl_fanspeed, NULL, \
-			asmc_mb_sysctl_fanminspeed, \
-			asmc_mb_sysctl_fanmaxspeed, \
-			asmc_mb_sysctl_fantargetspeed
+#define ASMC_FAN_FUNCS2	\
+			.smc_fan_id = asmc_mb_sysctl_fanid, \
+			.smc_fan_speed = asmc_mb_sysctl_fanspeed, \
+			.smc_fan_safespeed = NULL, \
+			.smc_fan_minspeed = asmc_mb_sysctl_fanminspeed, \
+			.smc_fan_maxspeed = asmc_mb_sysctl_fanmaxspeed, \
+			.smc_fan_targetspeed = asmc_mb_sysctl_fantargetspeed
 
-#define ASMC_LIGHT_FUNCS asmc_mbp_sysctl_light_left, \
-			 asmc_mbp_sysctl_light_right, \
-			 asmc_mbp_sysctl_light_control
+#define ASMC_LIGHT_FUNCS \
+			 .smc_light_left = asmc_mbp_sysctl_light_left, \
+			 .smc_light_right = asmc_mbp_sysctl_light_right, \
+			 .smc_light_control = asmc_mbp_sysctl_light_control
 
 #define ASMC_LIGHT_FUNCS_10BYTE \
-			 asmc_mbp_sysctl_light_left_10byte, \
-			 NULL, \
-			 asmc_mbp_sysctl_light_control
+			 .smc_light_left = asmc_mbp_sysctl_light_left_10byte, \
+			 .smc_light_right = NULL, \
+			 .smc_light_control = asmc_mbp_sysctl_light_control
 
-#define ASMC_LIGHT_FUNCS_DISABLED NULL, NULL, NULL
+#define ASMC_LIGHT_FUNCS_DISABLED \
+			 .smc_light_left = NULL, \
+			 .smc_light_right = NULL, \
+			 .smc_light_control = NULL
 
 static const struct asmc_model asmc_models[] = {
 	{
@@ -331,7 +346,7 @@ static const struct asmc_model asmc_models[] = {
 	{
 	  "Macmini4,1", "Apple SMC Mac mini 4,1 (Mid-2010)",
 	  ASMC_SMS_FUNCS_DISABLED,
-	  ASMC_FAN_FUNCS,
+	  ASMC_FAN_FUNCS2,
 	  ASMC_LIGHT_FUNCS_DISABLED,
 	  ASMC_MM41_TEMPS, ASMC_MM41_TEMPNAMES, ASMC_MM41_TEMPDESCS
 	},
@@ -404,9 +419,9 @@ static const struct asmc_model asmc_models[] = {
 	/* Idem for the Mac Pro (Early 2008) */
 	{
 	  "MacPro3,1", "Apple SMC Mac Pro (Early 2008)",
-	  NULL, NULL, NULL,
+	  ASMC_SMS_FUNCS_DISABLED,
 	  ASMC_FAN_FUNCS,
-	  NULL, NULL, NULL,
+	  ASMC_LIGHT_FUNCS_DISABLED,
 	  ASMC_MP31_TEMPS, ASMC_MP31_TEMPNAMES, ASMC_MP31_TEMPDESCS
 	},
 
@@ -540,9 +555,9 @@ static driver_t	asmc_driver = {
 #define	_COMPONENT	ACPI_OEM
 ACPI_MODULE_NAME("ASMC")
 #ifdef ASMC_DEBUG
-#define ASMC_DPRINTF(str)	device_printf(dev, str)
+#define ASMC_DPRINTF(str, ...)	device_printf(dev, str, ##__VA_ARGS__)
 #else
-#define ASMC_DPRINTF(str)
+#define ASMC_DPRINTF(str, ...)
 #endif
 
 /* NB: can't be const */
@@ -636,57 +651,50 @@ asmc_attach(device_t dev)
 		name[0] = '0' + j;
 		name[1] = 0;
 		sc->sc_fan_tree[i] = SYSCTL_ADD_NODE(sysctlctx,
-		    SYSCTL_CHILDREN(sc->sc_fan_tree[0]),
-		    OID_AUTO, name, CTLFLAG_RD | CTLFLAG_MPSAFE, 0,
-		    "Fan Subtree");
+		    SYSCTL_CHILDREN(sc->sc_fan_tree[0]), OID_AUTO, name,
+		    CTLFLAG_RD | CTLFLAG_MPSAFE, 0, "Fan Subtree");
 
 		SYSCTL_ADD_PROC(sysctlctx,
 		    SYSCTL_CHILDREN(sc->sc_fan_tree[i]),
 		    OID_AUTO, "id",
-		    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE,
-		    dev, j, model->smc_fan_id, "I",
-		    "Fan ID");
+		    CTLTYPE_STRING | CTLFLAG_RD | CTLFLAG_MPSAFE, dev, j,
+		    model->smc_fan_id, "I", "Fan ID");
 
 		SYSCTL_ADD_PROC(sysctlctx,
 		    SYSCTL_CHILDREN(sc->sc_fan_tree[i]),
 		    OID_AUTO, "speed",
-		    CTLTYPE_INT | CTLFLAG_RD | CTLFLAG_MPSAFE,
-		    dev, j, model->smc_fan_speed, "I",
-		    "Fan speed in RPM");
+		    CTLTYPE_INT | CTLFLAG_RD | CTLFLAG_MPSAFE, dev, j,
+		    model->smc_fan_speed, "I", "Fan speed in RPM");
 
 		SYSCTL_ADD_PROC(sysctlctx,
 		    SYSCTL_CHILDREN(sc->sc_fan_tree[i]),
 		    OID_AUTO, "safespeed",
-		    CTLTYPE_INT | CTLFLAG_RD | CTLFLAG_MPSAFE,
-		    dev, j, model->smc_fan_safespeed, "I",
-		    "Fan safe speed in RPM");
+		    CTLTYPE_INT | CTLFLAG_RD | CTLFLAG_MPSAFE, dev, j,
+		    model->smc_fan_safespeed, "I", "Fan safe speed in RPM");
 
 		SYSCTL_ADD_PROC(sysctlctx,
 		    SYSCTL_CHILDREN(sc->sc_fan_tree[i]),
 		    OID_AUTO, "minspeed",
-		    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_MPSAFE,
-		    dev, j, model->smc_fan_minspeed, "I",
-		    "Fan minimum speed in RPM");
+		    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_MPSAFE, dev, j,
+		    model->smc_fan_minspeed, "I", "Fan minimum speed in RPM");
 
 		SYSCTL_ADD_PROC(sysctlctx,
 		    SYSCTL_CHILDREN(sc->sc_fan_tree[i]),
 		    OID_AUTO, "maxspeed",
-		    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_MPSAFE,
-		    dev, j, model->smc_fan_maxspeed, "I",
-		    "Fan maximum speed in RPM");
+		    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_MPSAFE, dev, j,
+		    model->smc_fan_maxspeed, "I", "Fan maximum speed in RPM");
 
 		SYSCTL_ADD_PROC(sysctlctx,
 		    SYSCTL_CHILDREN(sc->sc_fan_tree[i]),
 		    OID_AUTO, "targetspeed",
-		    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_MPSAFE,
-		    dev, j, model->smc_fan_targetspeed, "I",
-		    "Fan target speed in RPM");
+		    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_MPSAFE, dev, j,
+		    model->smc_fan_targetspeed, "I", "Fan target speed in RPM");
 
 		SYSCTL_ADD_PROC(sysctlctx,
 		    SYSCTL_CHILDREN(sc->sc_fan_tree[i]),
 		    OID_AUTO, "manual",
-		    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_MPSAFE,
-		    dev, j, asmc_mb_sysctl_fanmanual, "I",
+		    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_MPSAFE, dev, j,
+		    asmc_mb_sysctl_fanmanual, "I",
 		    "Fan manual mode (0=auto, 1=manual)");
 	}
 
@@ -701,8 +709,8 @@ asmc_attach(device_t dev)
 		SYSCTL_ADD_PROC(sysctlctx,
 		    SYSCTL_CHILDREN(sc->sc_temp_tree),
 		    OID_AUTO, model->smc_tempnames[i],
-		    CTLTYPE_INT | CTLFLAG_RD | CTLFLAG_MPSAFE,
-		    dev, i, asmc_temp_sysctl, "I",
+		    CTLTYPE_INT | CTLFLAG_RD | CTLFLAG_MPSAFE, dev, i,
+		    asmc_temp_sysctl, "I",
 		    model->smc_tempdescs[i]);
 	}
 
@@ -725,16 +733,15 @@ asmc_attach(device_t dev)
 		SYSCTL_ADD_PROC(sysctlctx,
 		    SYSCTL_CHILDREN(sc->sc_light_tree),
 		    OID_AUTO, "right",
-		    CTLTYPE_INT | CTLFLAG_RD | CTLFLAG_MPSAFE,
-		    dev, 0, model->smc_light_right, "I",
+		    CTLTYPE_INT | CTLFLAG_RD | CTLFLAG_MPSAFE, dev, 0,
+		    model->smc_light_right, "I",
 		    "Keyboard backlight right sensor");
 
 		SYSCTL_ADD_PROC(sysctlctx,
 		    SYSCTL_CHILDREN(sc->sc_light_tree),
 		    OID_AUTO, "control",
-		    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_ANYBODY |
-		    CTLFLAG_MPSAFE, dev, 0,
-		    model->smc_light_control, "I",
+		    CTLTYPE_INT | CTLFLAG_RW | CTLFLAG_ANYBODY | CTLFLAG_MPSAFE,
+		    dev, 0, model->smc_light_control, "I",
 		    "Keyboard backlight brightness control");
 	}
 
@@ -797,11 +804,8 @@ asmc_attach(device_t dev)
 		goto err2;
 	}
 
-	ret = bus_setup_intr(dev, sc->sc_irq,
-	          INTR_TYPE_MISC | INTR_MPSAFE,
-	    asmc_sms_intrfast, NULL,
-	    dev, &sc->sc_cookie);
-
+	ret = bus_setup_intr(dev, sc->sc_irq, INTR_TYPE_MISC | INTR_MPSAFE,
+	    asmc_sms_intrfast, NULL, dev, &sc->sc_cookie);
 	if (ret) {
 		device_printf(dev, "unable to setup SMS IRQ\n");
 		goto err1;
@@ -849,7 +853,7 @@ asmc_resume(device_t dev)
 
 	buf[0] = light_control;
 	buf[1] = 0x00;
-	asmc_key_write(dev, ASMC_KEY_LIGHTVALUE, buf, sizeof buf);
+	asmc_key_write(dev, ASMC_KEY_LIGHTVALUE, buf, sizeof(buf));
 
 	return (0);
 }
@@ -950,8 +954,9 @@ out:
 nosms:
 	sc->sc_nfan = asmc_fan_count(dev);
 	if (sc->sc_nfan > ASMC_MAXFANS) {
-		device_printf(dev, "more than %d fans were detected. Please "
-		    "report this.\n", ASMC_MAXFANS);
+		device_printf(dev,
+		    "more than %d fans were detected. Please report this.\n",
+		    ASMC_MAXFANS);
 		sc->sc_nfan = ASMC_MAXFANS;
 	}
 
@@ -1011,12 +1016,9 @@ asmc_wait(device_t dev, uint8_t val)
 
 #ifdef ASMC_DEBUG
 	sc = device_get_softc(dev);
-#endif
-	val = val & ASMC_STATUS_MASK;
 
-#ifdef ASMC_DEBUG
-	device_printf(dev, "%s failed: 0x%x, 0x%x\n", __func__, val,
-	    ASMC_CMDPORT_READ(sc));
+	device_printf(dev, "%s failed: 0x%x, 0x%x\n", __func__,
+	    val & ASMC_STATUS_MASK, ASMC_CMDPORT_READ(sc));
 #endif
 	return (1);
 }
@@ -1157,16 +1159,17 @@ out:
 		type[5] = 0;
 		if (maxlen > sizeof(v)) {
 			device_printf(dev,
-			    "WARNING: cropping maxlen from %d to %zu\n",
-			    maxlen, sizeof(v));
+			    "WARNING: cropping maxlen from %d to %zu\n", maxlen,
+			    sizeof(v));
 			maxlen = sizeof(v);
 		}
 		for (i = 0; i < sizeof(v); i++) {
 			v[i] = 0;
 		}
 		asmc_key_read(dev, key, v, maxlen);
-		snprintf(buf, sizeof(buf), "key %d is: %s, type %s "
-		    "(len %d), data", number, key, type, maxlen);
+		snprintf(buf, sizeof(buf),
+		    "key %d is: %s, type %s (len %d), data",
+		    number, key, type, maxlen);
 		for (i = 0; i < maxlen; i++) {
 			snprintf(buf2, sizeof(buf2), " %02x", v[i]);
 			strlcat(buf, buf2, sizeof(buf));
@@ -1230,7 +1233,7 @@ asmc_fan_count(device_t dev)
 {
 	uint8_t buf[1];
 
-	if (asmc_key_read(dev, ASMC_KEY_FANCOUNT, buf, sizeof buf) != 0)
+	if (asmc_key_read(dev, ASMC_KEY_FANCOUNT, buf, sizeof(buf)) != 0)
 		return (-1);
 
 	return (buf[0]);
@@ -1244,7 +1247,7 @@ asmc_fan_getvalue(device_t dev, const char *key, int fan)
 	char fankey[5];
 
 	snprintf(fankey, sizeof(fankey), key, fan);
-	if (asmc_key_read(dev, fankey, buf, sizeof buf) != 0)
+	if (asmc_key_read(dev, fankey, buf, sizeof(buf)) != 0)
 		return (-1);
 	speed = (buf[0] << 6) | (buf[1] >> 2);
 
@@ -1278,7 +1281,7 @@ asmc_fan_setvalue(device_t dev, const char *key, int fan, int speed)
 	buf[1] = speed;
 
 	snprintf(fankey, sizeof(fankey), key, fan);
-	if (asmc_key_write(dev, fankey, buf, sizeof buf) < 0)
+	if (asmc_key_write(dev, fankey, buf, sizeof(buf)) < 0)
 		return (-1);
 
 	return (0);
@@ -1446,7 +1449,7 @@ asmc_temp_getvalue(device_t dev, const char *key)
 	/*
 	 * Check for invalid temperatures.
 	 */
-	if (asmc_key_read(dev, key, buf, sizeof buf) != 0)
+	if (asmc_key_read(dev, key, buf, sizeof(buf)) != 0)
 		return (-1);
 
 	return (buf[0]);
@@ -1479,12 +1482,12 @@ asmc_sms_read(device_t dev, const char *key, int16_t *val)
 	case 'X':
 	case 'Y':
 	case 'Z':
-		error = asmc_key_read(dev, key, buf, sizeof buf);
+		error = asmc_key_read(dev, key, buf, sizeof(buf));
 		break;
 	default:
 		device_printf(dev, "%s called with invalid argument %s\n",
 		    __func__, key);
-		error = 1;
+		error = EINVAL;
 		goto out;
 	}
 	*val = ((int16_t)buf[0] << 8) | buf[1];
@@ -1629,7 +1632,7 @@ asmc_mbp_sysctl_light_left(SYSCTL_HANDLER_ARGS)
 	int error;
 	int32_t v;
 
-	asmc_key_read(dev, ASMC_KEY_LIGHTLEFT, buf, sizeof buf);
+	asmc_key_read(dev, ASMC_KEY_LIGHTLEFT, buf, sizeof(buf));
 	v = buf[2];
 	error = sysctl_handle_int(oidp, &v, 0, req);
 
@@ -1644,7 +1647,7 @@ asmc_mbp_sysctl_light_right(SYSCTL_HANDLER_ARGS)
 	int error;
 	int32_t v;
 
-	asmc_key_read(dev, ASMC_KEY_LIGHTRIGHT, buf, sizeof buf);
+	asmc_key_read(dev, ASMC_KEY_LIGHTRIGHT, buf, sizeof(buf));
 	v = buf[2];
 	error = sysctl_handle_int(oidp, &v, 0, req);
 
@@ -1668,7 +1671,7 @@ asmc_mbp_sysctl_light_control(SYSCTL_HANDLER_ARGS)
 		light_control = v;
 		buf[0] = light_control;
 		buf[1] = 0x00;
-		asmc_key_write(dev, ASMC_KEY_LIGHTVALUE, buf, sizeof buf);
+		asmc_key_write(dev, ASMC_KEY_LIGHTVALUE, buf, sizeof(buf));
 	}
 	return (error);
 }
@@ -1681,7 +1684,7 @@ asmc_mbp_sysctl_light_left_10byte(SYSCTL_HANDLER_ARGS)
 	int error;
 	uint32_t v;
 
-	asmc_key_read(dev, ASMC_KEY_LIGHTLEFT, buf, sizeof buf);
+	asmc_key_read(dev, ASMC_KEY_LIGHTLEFT, buf, sizeof(buf));
 
 	/*
 	 * This seems to be a 32 bit big endian value from buf[6] -> buf[9].

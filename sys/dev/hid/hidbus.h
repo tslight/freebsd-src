@@ -47,7 +47,7 @@ void hidbus_unregister_kbd_remap_hook(hidbus_kbd_remap_fn_t fn);
 const uint8_t *hidbus_kbd_get_map(void);
 
 enum {
-	HIDBUS_IVAR_USAGE,
+	HIDBUS_IVAR_USAGE = BUS_IVARS_PRIVATE,
 	HIDBUS_IVAR_INDEX,
 	HIDBUS_IVAR_FLAGS,
 #define	HIDBUS_FLAG_AUTOCHILD	(0<<1)	/* Child is autodiscovered */
